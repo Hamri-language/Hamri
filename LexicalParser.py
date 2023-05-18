@@ -24,7 +24,7 @@ class LexicalParser:
    def read_source(self,arg):
       content = open(arg, "r")
       script = content.readlines()
-      content.close(
+      content.close()
       return script
       
    def parse(self):
