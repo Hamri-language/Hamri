@@ -1,5 +1,6 @@
 import re
 import enum
+import sys
 
 # Set holding our lexeme units. We use a set of regular expressions to match for lexemes for parsing later.
 class Tokens(enum.Enum):
@@ -19,9 +20,26 @@ class LexicalParser:
 
     def read_source(self, arg):
         # Function to read in our Hamri script from source
-        content = open(arg, "r")
-        script = content.readlines()
-        content.close()
+        script = None
+        # function to return the file extension
+        from os.path import exists
+        
+        if exists(arg):
+            import pathlib
+            
+            if pathlib.Path(arg).suffix == '.ham':
+                content = open(arg, "r")
+                script = content.readlines()
+                content.close()
+                
+            else:
+                print('The file you provided is not a hamri script file')
+                
+                sys.exit(1)
+        else:
+            print('The file path you provided does not exist')
+            sys.exit(1)
+            
         return script
 
     def parse(self):
