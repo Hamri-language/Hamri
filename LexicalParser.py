@@ -1,6 +1,7 @@
 import re
 import enum
 import sys
+from os.path import exists
 
 # Set holding our lexeme units. We use a set of regular expressions to match for lexemes for parsing later.
 class Tokens(enum.Enum):
@@ -13,17 +14,17 @@ class Tokens(enum.Enum):
     operator = r'[\*\/\+\-\=\,]'  # Regular expression for operators
 
 class LexicalParser:
-    def __init__(self, script):
+    def __init__(self, script,flag=None):
         # Class constructor with script (Hamri script) and an empty token_list array
-        self.script = self.read_source(script)
+        self.script = self.read_source(script) if flag== 'f' else script.split('\n')
         self.token_list = []
 
     def read_source(self, arg):
         # Function to read in our Hamri script from source
         script = None
-        # function to return the file extension
-        from os.path import exists
         
+        # function to return the file extension
+
         if exists(arg):
             import pathlib
             
