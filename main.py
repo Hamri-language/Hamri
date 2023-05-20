@@ -7,7 +7,7 @@ path_ = 'path_to_hamri_file'
 
 ##Here is a sample Hamri script
 
-'''
+code = '''
 
 kwanza
 
@@ -35,7 +35,8 @@ kwisha
 
 
 if __name__ == '__main__':
-    lexicalParser = LexicalParser(path_).parse()
+    #lexicalParser = LexicalParser(path_,'f').parse() #add 'f' flag for file paths
+    lexicalParser = LexicalParser(code).parse()
     #print to console all the tokens found in script
     #lexicalParser.print_tokens() 
     statementParser = StatementParser(lexicalParser.token_list).parse()
