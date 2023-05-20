@@ -64,4 +64,4 @@ Follow us on our socials
   
   linkedIn - https://www.linkedin.com/company/hamri-foundation
   
-  email - hey@hamri.org
+  email - hello@hamri.org
