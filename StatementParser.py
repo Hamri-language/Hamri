@@ -12,6 +12,8 @@ from LexicalParser import TokenObj
 
 import tkinter as tk
 
+from Console import console
+
 from pprint import pprint as print_
 
 
@@ -28,10 +30,6 @@ variables= {"variables" :{
     "kwanza":[]
 }
 }
-
-global console
-console = None
-
 
 
 context = {"var-scope": "global","function-scope":"kwanza","class-scope":"kwanza"}
@@ -187,10 +185,7 @@ class StatementParser:
         
         return self.tokens[self.token_position - 1]    
 
-    def parse(self, arg=None):
-        global console
-    
-        console = arg
+    def parse(self):
     
         Log('=======================')
         Log('Statement Parsing')
@@ -225,20 +220,17 @@ class StatementParser:
 
     def execute(self):
         #clear our console first with some beginning text
-        global console
-        
-        #check if the Hamri IDE is being used
-        
-        if console is not None:
-            console.insert(1.0,'=====================================\nRunning Hamri script\n=====================================\n')
-            
-        else:
-            print('=====================================\nRunning Hamri script\n=====================================\n')
             
         
         Log('=======================')
         Log('Statement Execution')
         Log('=======================')
+        
+        
+        #start our console
+        console.start_console()
+        
+        
         
         #Hamri's main execution loop is this right here
         
@@ -258,17 +250,14 @@ class StatementParser:
                 break
             
         #print out execution code statement at the end of the execution loop
-        if symbolTable.exit() == 0:
-            #check if the Hamri IDE is being used
-            if console is not None:
-                console.insert(tk.END,'\n=====================================\nHamri script execution success with exit code 0\n=====================================')
-            else:
-                print('\n=====================================\nHamri script execution success with exit code 0\n=====================================')
-                
-            Log('\n=====================================\nHamri script execution success with exit code 0\n=====================================','Code executed successfully')
-        else:
-            if console is not None:          
-                console.insert(tk.END,'\n=====================================\nHamri script execution fail with exit code 1\n=====================================')
+        
+        Log('=======================')
+        Log('Statement Execution Completed')
+        Log('=======================')
+        
+        #stop our console and clear the symbolTable
+        console.close_console()
+        symbolTable.reset_table()
         
 
 
@@ -359,13 +348,12 @@ class PrintStatement(Statement):
         self.value = value
 
     def execute(self):
-        # Print the value
+        # Print the value to console
         if self.value.evaluate():
-            if console is not None:
-                console.insert(tk.END, '{}\n'.format(self.value.evaluate()))
-            else:
-                print('{}\n'.format(self.value.evaluate()))
+            console.print_to_console('{}\n'.format(self.value.evaluate()))
             Log("{}".format(self.value.evaluate()), "Print Statement")
+            
+        
 
 # Class to represent an assignment statement
 class AssignmentStatement(Statement):
