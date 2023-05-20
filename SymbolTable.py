@@ -24,6 +24,20 @@ class SymbolTable:
         self.call_flag = False
         self.exit_flag = 0
         
+    def reset_table(self):
+        self.table ={
+            "variables" :{
+                "global":{},
+                "local":{}
+            },
+            "functions":{
+                "kwanza":[]
+            },
+            "classes":{
+                "kwanza":[]
+            }
+        }
+        
     def reset_flags(self):
         # Reset the function definition and function call flags
         self.def_flag = False
