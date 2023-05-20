@@ -46,8 +46,12 @@ Add the file's path to the 'path_' variable in the 'main.py' file
 
         $ python main.py
 
+5. You can also run Hamri from the provided simple IDE.
+        
+        $ python Notepad.py
 
-You can also do this from your favourite code editor. 
+Note: 
+    You can also run these scripts from your favourite code editor. 
 
 The code is properly commented and annotated . Happy coding !!!
 
