@@ -89,17 +89,6 @@ class StatementParser:
             obj = Var((prev_.value, ExpressionParser(self.fetch_express()).parse(), symbolTable.get_scope('var-scope')))
             statement = AssignmentStatement(obj)
         
-        # Check for the "eleza" keyword indicating a function definition statement
-        elif parse_token.value == 'eleza':
-            Log('case for function definition')
-            # Set the function definition flag and extract the function name and parameters
-            symbolTable.def_flag = True
-            function_name = next_.value
-            self.token_position = next_.position() + 1  # Advance by one to skip the function name
-    
-            # Create a FunctionDefinitionStatement object with the function name and parameters
-            statement = FunctionDefinitionStatement((function_name, self.fetch_express()))
-        
         # Check for the "kwisha" keyword indicating the end of a block
         elif parse_token.value == 'kwisha':
             Log('case for end block')
@@ -122,16 +111,32 @@ class StatementParser:
             statement = ReturnObjectTypeStatement(ExpressionParser(self.fetch_express()).parse())        
         
         # Check for a function call by identifying a variable followed by '('
-        elif parse_token.token_type == 'variable' and next_.value == '(':
-            Log('case for function call')
-            # Set the call flag and extract the function name
-            call_flag = True
-            function_name = parse_token.value
+        elif parse_token.token_type == 'function':
             
-            self.token_position = self.token_position + 1  # Advance by one to skip the opening parenthesis
+            if prev_.value == 'eleza':
+                
+                Log('case for function definition')
+                # Set the function definition flag and extract the function name and parameters
+                symbolTable.def_flag = True
+                function_name = parse_token.value        
+                # Create a FunctionDefinitionStatement object with the function name and parameters
+                expression = self.fetch_express()
+                statement = FunctionDefinitionStatement((function_name, expression))
+                
+            else:
+                Log('case for function call')
+                # Set the call flag and extract the function name
+                call_flag = True
+                function_name = parse_token.value
+                
+                # Create a FunctionCallStatement object with the function name and the parsed expressions as parameters
+                
+                statement = FunctionCallStatement((function_name, self.fetch_express()))
+                
+        elif parse_token.value == 'rudisha':
+            Log('case for function return statement')
+            statement = FunctionReturnStatement(ExpressionParser(self.fetch_express()).parse())
             
-            # Create a FunctionCallStatement object with the function name and the parsed expressions as parameters
-            statement = FunctionCallStatement((function_name, self.fetch_express()))
         
         else:
             Log('default case')
@@ -164,9 +169,11 @@ class StatementParser:
                 self.token_position = self.token_position + 1  # Advance the execution loop
                 
                 return_val.append(Object(self.next_token()).cast())  # Add the term to the return value
+                
                 self.token_position = self.token_position + 1
         
         Log(return_val, 'Evaluated expression')
+        
         return return_val
 
         
@@ -281,7 +288,13 @@ class FunctionCallStatement(Statement):
 
     def execute(self):
         # Assign parameter values to function arguments
+        #set the scope to the executing function's name
+        symbolTable.set_scope(('function-scope',self.name))
+        
+        Log(symbolTable.get_function_arguments(self.params), 'Function Parameters')
+        
         assignments = list(zip(symbolTable.get_function_arguments(self.name), self.params))
+        
         Log(list(assignments), 'Function Arguments')
 
         # Evaluate and assign parameter values to local variables
@@ -310,13 +323,37 @@ class FunctionDefinitionStatement(Statement):
         self.params = arg[1]
         # Set the current function scope in the symbol table
         symbolTable.set_function(self.name)
-        Log('created new function {}'.format(self.name), 'Function Definition')
+        Log('created new function {} with params: '.format(self.name), 'Function Definition')
 
     def execute(self):
         # Create local variables for function arguments
-        Log('creating new arguments')
+        Log('creating new arguments: {}'.format(self.params))
         for i in self.params:
+            Log('setting function parameter {}'.format(i.name))
             Var(('function-{}-{}'.format(self.name, i.name), '', 'local')).evaluate()
+            
+        Log('{}'.format(symbolTable.table))
+            
+            
+class FunctionReturnStatement(Statement):
+    
+    def __init__(self,arg):
+        self.return_value = arg
+        
+        
+    def execute(self):
+        #get current context (function name) and set the return value
+        symbolTable.set_return_value(symbolTable.get_scope("function-scope"),self.return_value)
+        
+        #self.return_value = self.return_value.evaluate()
+        
+        Log('{}'.format(self.return_value),'Evaluated return statement')
+        
+        Log('setting return value for function: {} to {}'.format(symbolTable.get_scope("function-scope"),self.return_value))
+        
+        #set our return value in the symbolTable (function_name,value)
+        symbolTable.set_return_value(symbolTable.get_scope("function-scope"),self.return_value)
+        p
 
 # Class to represent an input statement
 class InputStatement(Statement):
