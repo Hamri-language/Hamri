@@ -5,13 +5,15 @@ from os.path import exists
 
 # Set holding our lexeme units. We use a set of regular expressions to match for lexemes for parsing later.
 class Tokens(enum.Enum):
-    keyword = r'(chapa|kama|jaza|kwisha|kwanza|eleza|aina)'  # Regular expression for keywords
+    keyword = r'(chapa|kama|jaza|kwisha|kwanza|eleza|aina|rudisha)'  # Regular expression for keywords
+    function = r'([a-zA-Z_][a-zA-Z0-9_]*)\s*\('
     divider = r'(\\[|\\]|\(|\))'  # Regular expression for dividers
     boolean = r'true|false'  # Regular expression for booleans
     integer = r'\.\b[0-9]+|[0-9]+'  # Regular expression for integers
     string = r'"(.*?)"|\'(.*?)\'|\b[0-9]+'  # Regular expression for strings
     variable = r'((\'[^\']*\'|([A-Za-z_]\w*(?:\.[a-z_]\w*)*))(?!\"\')|("[^"]*"|([a-z_]\w*(?:\.[a-z_]\w*)*))(?!\"\'))'  # Regular expression for variables
     operator = r'[\*\/\+\-\=\,]'  # Regular expression for operators
+    
 
 class LexicalParser:
     def __init__(self, script,flag=None):
@@ -68,9 +70,10 @@ class LexicalParser:
         for t_ in all_tokens:
             for t in Tokens:
                 if self.find_token_match(t_[0], t.value):
+                    
                     self.token_list.append(
                         TokenObj(t.name,
-                                 t_[0].replace('"', '').replace('\'', '') if t.name == 'string' else t_[0],
+                                 t_[0].replace('"', '').replace('\'', '') if t.name == 'string' else t_[0].replace('(','') if t.name == 'function' else t_[0],
                                  t_[1], t_[2], id_
                                  )
                     )
