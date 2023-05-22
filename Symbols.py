@@ -2,46 +2,45 @@ class SymbolTable:
     def __init__(self):
         self.symbol_table = {}
 
+    def add_symbol(self, name, value, scope):
+        self.symbol_table[(name, scope)] = value
+
+    def lookup_symbol(self, name, scope):
+        if (name, scope) in self.symbol_table:
+            return self.symbol_table[(name, scope)]
+        else:
+            return None
+
+    def remove_symbol(self, name, scope):
+        if (name, scope) in self.symbol_table:
+            del self.symbol_table[(name, scope)]
+
+
+class Scope:
+    def __init__(self):
+        self.symbol_table = SymbolTable()
+        self.scope = None
+
+    def set_scope(self, scope):
+        self.scope = scope
+
     def add_symbol(self, name, value):
-        self.symbol_table[name] = value
+        if self.scope is not None:
+            self.symbol_table.add_symbol(name, value, self.scope)
 
     def lookup_symbol(self, name):
-        if name in self.symbol_table:
-            return self.symbol_table[name]
+        if self.scope is not None:
+            return self.symbol_table.lookup_symbol(name, self.scope)
         else:
             return None
 
     def remove_symbol(self, name):
-        if name in self.symbol_table:
-            del self.symbol_table[name]
+        if self.scope is not None:
+            self.symbol_table.remove_symbol(name, self.scope)
             
-    def print_symbol_table(self):
-        return self.symbol_table
-
-
-class Scope:
-    def __init__(self, parent=None):
-        self.symbol_table = SymbolTable()
-        self.parent = parent
-
-    def add_symbol(self, name, value):
-        self.symbol_table.add_symbol(name, value)
-
-    def lookup_symbol(self, name):
-        value = self.symbol_table.lookup_symbol(name)
-        if value is None and self.parent is not None:
-            return self.parent.lookup_symbol(name)
-        else:
-            return value
-
-    def remove_symbol(self, name):
-        self.symbol_table.remove_symbol(name)
-        
-    def print_scope_table(self):
-        return self.symbol_table.print_symbol_table()
+    def return_scope(self):
+        return self.scope
 
 
 
-global_scope = Scope()
-
-symboltable = SymbolTable()
+scope = Scope()
