@@ -22,51 +22,19 @@ except ImportError:
         END = 'end'
     tk = _FakeTk()
 
-global variables
-variables= {"variables" :{
-"global":{},
-"local":{}
-},
-"functions":{
-    "kwanza":[]
-},
-"classes":{
-    "kwanza":[]
-}
-}
-
+# Module-level handle to whatever console object (Tk Text widget, web
+# console shim, ...) the current run is using - set once via the
+# 'the console gets wired up' statement further below and read back
+# everywhere PrintStatement/TypeStatement/the run-start and run-end
+# banners need to write output. `global console` here just declares
+# that this name lives at module scope, so any function below that
+# also writes `global console` before assigning to it is modifying
+# this same shared variable rather than creating a local one.
 global console
 console = None
 
 
-
-context = {"var-scope": "global","function-scope":"kwanza","class-scope":"kwanza"}
-definition_flag = False
-call_flag = False
-
-def breadcrumb(json_dict_or_list, value):
-    if json_dict_or_list == value:
-        return [json_dict_or_list]
-    elif isinstance(json_dict_or_list, dict):
-        for k, v in json_dict_or_list.items():
-            p = breadcrumb(v, value)
-            if p:
-                return [k] + p
-    elif isinstance(json_dict_or_list, list):
-        lst = json_dict_or_list
-        for i in range(len(lst)):
-            p = breadcrumb(lst[i], value)
-            if p:
-                return [str(i)] + p
-            
 class StatementParser:
-    compound_statement = {"kwanza":[],"functions":{}}
-    context = compound_statement['kwanza']
-    prev_context = compound_statement['kwanza']
-    global call_flag
-    global definition_flag
-
-    function_flag = 'kwanza'
     
     def __init__(self,tokens):
         self.tokens = tokens
@@ -98,9 +66,6 @@ class StatementParser:
         
 
     def parseStatement(self,parse_token):
-        global call_flag
-        
-        
         next_ = self.next_token() if self.token_position < len(self.tokens)-1 else None
         prev_ = self.prev_token() if self.token_position > 0 else None
         Log(parse_token.value,"parsing token")
@@ -287,17 +252,24 @@ class StatementParser:
             self.token_position = self.token_position + 1  # land on 'kutoka'
             after_kutoka = self.next_token()
 
+            # leta has no runtime behaviour of its own (see _parse_module),
+            # so a failed import is reported right here, at parse time -
+            # symbolTable.current_line (updated only as statements
+            # *execute*) wouldn't reflect this line, so it's passed
+            # through explicitly instead.
+            leta_line = parse_token.line + 1
+
             if after_kutoka is not None and after_kutoka.token_type == 'string':
                 self.token_position = self.token_position + 1  # land on the filename string
                 filename = self.tokens[self.token_position].value
-                self.import_classes(names,filename)
+                self.import_classes(names,filename,leta_line)
             else:
                 class_name = after_kutoka.value if after_kutoka is not None else None
                 self.token_position = self.token_position + 1  # land on <class-name>
                 self.token_position = self.token_position + 1  # land on 'kutoka'
                 self.token_position = self.token_position + 1  # land on the filename string
                 filename = self.tokens[self.token_position].value
-                self.import_methods(names,class_name,filename)
+                self.import_methods(names,class_name,filename,leta_line)
 
         elif parse_token.value == 'kwanza':
             Log('case for main block')
@@ -342,7 +314,6 @@ class StatementParser:
             
         elif parse_token.token_type == 'variable' and next_.value == '(':
             Log('case for function call')
-            call_flag = True
             function_name = parse_token.value
 
             self.token_position = self.token_position + 1 #advance by one to fly over the first divider
@@ -437,26 +408,26 @@ class StatementParser:
 
         return True
 
-    def import_classes(self,names,filename):
+    def import_classes(self,names,filename,line=None):
         # 'leta A, B kutoka "faili"' - pulls in one or more whole classes.
         if not self._parse_module(filename):
-            Error.throwException('leta',filename)
+            Error.throwException('leta',filename,line)
             return
         for name in names:
             if name not in symbolTable.table['classes']:
-                Error.throwException('leta','{} ({})'.format(name,filename))
+                Error.throwException('leta','{} ({})'.format(name,filename),line)
 
-    def import_methods(self,names,class_name,filename):
+    def import_methods(self,names,class_name,filename,line=None):
         # 'leta a, b kutoka ClassName kutoka "faili"' - pulls in one or
         # more specific methods of a class, callable standalone (see
         # SymbolTable.alias_function).
         if not self._parse_module(filename):
-            Error.throwException('leta',filename)
+            Error.throwException('leta',filename,line)
             return
         for name in names:
             qualified_name = 'darasa-{}-{}'.format(class_name,name)
             if not symbolTable.alias_function(name,qualified_name):
-                Error.throwException('leta','{}.{} ({})'.format(class_name,name,filename))
+                Error.throwException('leta','{}.{} ({})'.format(class_name,name,filename),line)
 
     def try_parse_special_value(self):
         # Tries each of the "not a plain fetch_express() expression"
@@ -485,8 +456,46 @@ class StatementParser:
         # the expression.
         special = self.try_parse_special_value()
         if special is not None:
-            return ExpressionParser(self.continue_express(special)).parse()
-        return ExpressionParser(self.fetch_express()).parse()
+            value = ExpressionParser(self.continue_express(special)).parse()
+        else:
+            value = ExpressionParser(self.fetch_express()).parse()
+        return self.try_parse_ternary(value)
+
+    def try_parse_ternary(self,true_value):
+        # Detects a trailing '<true_value> kama <condition> sivyo
+        # <false_value>' ternary suffix right after an already-parsed
+        # value - a real inline conditional expression (like Python's
+        # 'x if cond else y'), e.g.
+        # `jina kama jina sawa na "Cookie" sivyo "Guest"`. 'kama' is a
+        # keyword, not an operator, so fetch_express()'s own
+        # operand-reading loop already stops cleanly right before it -
+        # this picks up exactly where that left off.
+        #
+        # Requires 'sivyo' - if it's missing (a malformed/incomplete
+        # ternary), token_position is rewound to right where it was
+        # before this method ever looked at 'kama', so the caller falls
+        # back to treating 'kama' as the start of a brand new statement
+        # (an ordinary if-block) exactly as it always has, rather than
+        # this method guessing at what a half-written ternary meant.
+        if self.next_token() is None or self.next_token().value != 'kama':
+            return true_value
+
+        rollback_position = self.token_position
+        self.token_position = self.token_position + 1  # land on 'kama'
+        condition = ExpressionParser(self.fetch_express()).parse()
+
+        if self.next_token() is None or self.next_token().value != 'sivyo':
+            self.token_position = rollback_position
+            return true_value
+
+        self.token_position = self.token_position + 1  # land on 'sivyo'
+        # Recursing (rather than a single fetch_express()) lets the
+        # false-branch itself be another ternary, so
+        # 'a kama x sivyo b kama y sivyo c' chains like an else-if
+        # ladder, evaluated left to right.
+        false_value = self.parse_expression_value()
+
+        return ConditionalExpression(true_value,condition,false_value)
 
     def continue_express(self,first):
         # Same operator-chaining loop as fetch_express()'s own while-loop,
@@ -679,12 +688,25 @@ class StatementParser:
 
         else:
 
+            # Read one operand, then keep alternating
+            # "operator, operand, operator, operand, ..." for as long as
+            # the token right after the current position is tagged as an
+            # operator - this builds up the flat list that
+            # ExpressionParser.parse() later folds left-to-right into a
+            # tree of Expression objects (see ExpressionParser.py).
             return_val = [self.read_operand()]
             Log(return_val[0],'First Token')
 
             while self.next_token() is not None and self.next_token().token_type == 'operator':
                 operator_token = self.next_token()
                 if operator_token.value != ',':
+                    # A comma is tagged as an 'operator' token by the
+                    # lexer too (see Tokens.operator in LexicalParser.py)
+                    # purely so it's recognized here as "keep reading,
+                    # there's another operand coming" - but it isn't a
+                    # real operator ExpressionParser knows how to
+                    # evaluate, so it's deliberately never appended to
+                    # the list, only used to decide whether to loop again.
                     return_val.append(operator_token) #add our operator
 
                 self.token_position = self.token_position + 1 #advance our execution loop
@@ -696,13 +718,24 @@ class StatementParser:
         
     
     def print_statements(self):
+        # Debug helper - dumps the whole interpreter-wide variable/
+        # function/class table as it currently stands. Never called
+        # during normal execution; handy to uncomment a call to this
+        # while troubleshooting a script that isn't behaving as expected.
         print(symbolTable.table)
             
     def next_token(self):
+        # The token one position ahead of wherever parsing currently is.
+        # Returns None instead of raising an IndexError when that would
+        # run past either end of the token list, so callers can simply
+        # check "is next_token() None?" instead of wrapping every call
+        # in a try/except.
         pos = self.token_position + 1
         return self.tokens[pos] if 0 <= pos < len(self.tokens) else None
 
     def prev_token(self):
+        # Same idea as next_token(), but one position behind instead of
+        # ahead.
         pos = self.token_position - 1
         return self.tokens[pos] if 0 <= pos < len(self.tokens) else None
 
@@ -717,11 +750,23 @@ class StatementParser:
         Log('=======================')        
         
         while self.token_position < len(self.tokens):
-            
+
+            # Captured *before* parseStatement() runs, since parsing a
+            # statement advances self.token_position to wherever it
+            # finished (its last consumed token) - only the token it
+            # started on tells us the line the statement actually began
+            # on. TokenObj.line is 0-indexed (see LexicalParser); +1
+            # here so every line number that ever reaches the user
+            # (error messages) matches what they'd count in an editor.
+            start_line = self.tokens[self.token_position].line + 1
+
             statement = self.parseStatement(self.tokens[self.token_position])
-            
+
+            if statement is not None:
+                statement.line = start_line
+
             #print('Function definition flag:',symbolTable.def_flag)
- 
+
             Log(statement,'Evaluated statement')
             Log(symbolTable.get_scope('function-scope'),'Current context')
             
@@ -810,6 +855,7 @@ class StatementParser:
             if symbolTable.exit() == 0 and not symbolTable.is_returning():
                 Log('kwanza','Executing from scope')
                 Log(i,'Executing statement')
+                symbolTable.current_line = i.line
                 i.execute()
 
             else:
@@ -937,6 +983,7 @@ class FunctionCallStatement(Statement):
 
             Log(i,'Executing statement')
 
+            symbolTable.current_line = i.line
             i.execute()
 
         # This is the function-call boundary: absorb the return flag here
@@ -1017,6 +1064,31 @@ def _fetch_instance(name):
         Error.throwException('darasa',name)
         return None
     return value
+
+
+class ConditionalExpression(Object):
+    # `<true_value> kama <condition> sivyo <false_value>` used as a
+    # value - a real inline conditional expression (Python's ternary,
+    # `x if cond else y`), e.g.
+    # `nafsi.jina = jina kama jina sawa na "Cookie" sivyo "Guest"`.
+    # Built by try_parse_ternary() (see parse_expression_value()) - not
+    # tied to any ExpressionParser operator symbol, since it isn't a
+    # binary operator at all, just two branches and a condition.
+    #
+    # Evaluated lazily: only the branch actually taken is ever
+    # evaluated, exactly like the kama/sivyo *statement* form already
+    # behaves - so a false_value that would itself error out (e.g.
+    # reading a property that's only set on the true branch) is never
+    # touched unless the condition actually picks it.
+    def __init__(self,true_value,condition,false_value):
+        self.true_value = true_value
+        self.condition = condition
+        self.false_value = false_value
+
+    def evaluate(self):
+        if self.condition.evaluate():
+            return self.true_value.evaluate()
+        return self.false_value.evaluate()
 
 
 class PropertyExpression(Object):
@@ -1289,12 +1361,14 @@ class IfStatement(Statement):
             for i in symbolTable.table['functions'][self.true_name]:
                 if symbolTable.exit() != 0 or symbolTable.is_returning():
                     break
+                symbolTable.current_line = i.line
                 i.execute()
         elif self.else_name is not None:
             Log('condition false, executing sivyo-block {}'.format(self.else_name),'If Execution')
             for i in symbolTable.table['functions'][self.else_name]:
                 if symbolTable.exit() != 0 or symbolTable.is_returning():
                     break
+                symbolTable.current_line = i.line
                 i.execute()
         else:
             Log('condition false, no sivyo branch, skipping','If Execution')
@@ -1318,11 +1392,16 @@ class WhileStatement(Statement):
                 break
             iterations = iterations + 1
             if iterations > self.MAX_ITERATIONS:
-                Error.throwException('mzunguko',self.name)
+                # self.line (not symbolTable.current_line, which by now
+                # would just hold whatever body statement last ran) -
+                # the loop's own header line is more useful here than
+                # wherever execution happened to be when it gave up.
+                Error.throwException('mzunguko',self.name,self.line)
                 break
             for i in symbolTable.table['functions'][self.name]:
                 if symbolTable.exit() != 0 or symbolTable.is_returning():
                     break
+                symbolTable.current_line = i.line
                 i.execute()
             if symbolTable.is_returning():
                 break
@@ -1365,7 +1444,11 @@ class ForStatement(Statement):
                 break
             iterations = iterations + 1
             if iterations > self.MAX_ITERATIONS:
-                Error.throwException('mzunguko',self.name)
+                # self.line (not symbolTable.current_line, which by now
+                # would just hold whatever body statement last ran) -
+                # the loop's own header line is more useful here than
+                # wherever execution happened to be when it gave up.
+                Error.throwException('mzunguko',self.name,self.line)
                 break
 
             # Same storage path as a normal assignment (Var mode 1) -
@@ -1380,6 +1463,7 @@ class ForStatement(Statement):
             for i in symbolTable.table['functions'][self.name]:
                 if symbolTable.exit() != 0 or symbolTable.is_returning():
                     break
+                symbolTable.current_line = i.line
                 i.execute()
 
             if symbolTable.is_returning():
@@ -1418,6 +1502,7 @@ class ForEachStatement(Statement):
             for i in symbolTable.table['functions'][self.name]:
                 if symbolTable.exit() != 0 or symbolTable.is_returning():
                     break
+                symbolTable.current_line = i.line
                 i.execute()
 
             if symbolTable.is_returning():

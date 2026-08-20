@@ -91,6 +91,15 @@ class SymbolTable:
         # class.
         self.next_instance_id = 1
 
+        # The source line (1-indexed) of whichever statement is
+        # currently executing - updated right before every i.execute()
+        # call in every statement-list loop (kwanza's own, and every
+        # kama/wakati/huku/function-call body), so Errors.py can quote
+        # it in a runtime error message. None until the first statement
+        # actually starts executing (e.g. a script with no kwanza block
+        # at all never sets this).
+        self.current_line = None
+
 
     def new_instance_id(self):
         id_ = self.next_instance_id

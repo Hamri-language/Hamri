@@ -1,0 +1,21 @@
+darasa Mtu
+    eleza jenga(jina)
+        nafsi.jina ni jina kama jina sawa na "Cookie" sivyo "Guest"
+    kwisha
+    eleza salamu()
+        rudisha "Habari, mimi ni " + nafsi.jina
+    kwisha
+kwisha
+
+kwanza
+    mtu1 = Mtu("Cookie")
+    chapa mtu1.salamu()
+    mtu2 = Mtu("NotCookie")
+    chapa mtu2.salamu()
+
+    umri = 20
+    hali = "mtu mzima" kama umri inazidi 17 sivyo "kijana"
+    chapa hali
+
+    chapa 5 kama 1 sawa na 2 sivyo 6 kama 3 sawa na 3 sivyo 99
+kwisha

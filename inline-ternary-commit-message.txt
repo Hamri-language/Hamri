@@ -1,0 +1,21 @@
+Add a real inline conditional expression (kama ... sivyo)
+
+parse_expression_value() now checks for a trailing '<true_value> kama
+<condition> sivyo <false_value>' suffix after any value it parses -
+a real ternary (Python's 'x if cond else y'), usable anywhere a value
+is expected: assignments, chapa, function arguments, etc.
+
+'kama' is a keyword, not an operator, so fetch_express()'s own
+operand-reading loop already stopped cleanly right before it - this
+adds a new try_parse_ternary() step that picks up from there instead
+of leaving 'kama ...' to be silently misparsed as a new, unrelated
+if-block (which is what happened before this change).
+
+sivyo is required; if it's missing, token_position rewinds and 'kama'
+falls back to starting an ordinary if-block, unchanged from today -
+so this is purely additive, no existing script's behavior changes.
+Chains recursively for an else-if ladder.
+
+Verified against test_v1_0_3.ham and main.py's built-in sample with no
+regressions, plus new coverage: matching/non-matching conditions,
+chained ternaries, and the missing-sivyo fallback.
