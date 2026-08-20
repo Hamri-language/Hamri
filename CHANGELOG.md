@@ -239,6 +239,34 @@ lexer bug the highlighting fix surfaced along the way.
   console pane already has its own fixed black background and isn't
   affected.
 
+## Unreleased
+
+### Bug fixes
+
+- **`jaza` into a property (e.g. `jaza "jina lako ni?:", nafsi.jina`)
+  crashed with `'PropertyExpression' object has no attribute 'name'`.**
+  `InputStatement` assumed its destination was always a plain variable
+  and read `.name` off it directly at parse time, but `read_operand()`
+  recognizes `obj.member` shapes as a `PropertyExpression` first (the
+  same logic that makes `chapa mtu1.jina` work), and that class has no
+  `.name`. `InputStatement` now keeps the raw destination and, at
+  execute time, writes straight onto the instance's property table for
+  a `PropertyExpression` target (the same way `obj.jina = value` does)
+  or falls back to the original plain-variable path otherwise. This was
+  previously the only way `jaza` could not be used to fill in an
+  object's property directly inside its own constructor.
+
+### Breaking changes
+
+- **The loose-equality word operator is now `sawa na`, not `sawa`.**
+  `Tokens.keyword`'s pattern changed from `\bsawa\b` to `\bsawa\s+na\b`,
+  so the lexer now matches both words as a single token (same as any
+  other one-piece word-operator) and `WORD_OPERATORS`'s key changed to
+  match. Existing scripts using the old bare `sawa` need updating to
+  `sawa na` — e.g. `kama umri sawa 20` becomes
+  `kama umri sawa na 20`. `kabisa`/`hakika` (strict equality) are
+  unaffected.
+
 ## v1.0.2 — initial commit
 
 The starting point this changelog's v1.0.3 entry above is measured

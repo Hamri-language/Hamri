@@ -18,7 +18,12 @@ WORD_OPERATORS = {
    'punguza': '-',   # "reduce/decrease" -> subtraction
    'mara': '*',      # "times" -> multiplication
    'gawa': '/',      # "divide/share" -> division
-   'sawa': '==',     # "equal/okay" -> loose equality
+   'sawa na': '==',  # "equal to/okay with" -> loose equality. Two words,
+                      # not one - see Tokens.keyword's \bsawa\s+na\b below,
+                      # which matches both words as a single token so this
+                      # dict lookup (and everything downstream) can keep
+                      # treating it exactly like any other one-piece
+                      # word-operator.
 }
 
 # Word-form operators that don't map onto an existing symbol - there's no
@@ -56,7 +61,15 @@ class Tokens(enum.Enum):
    # project (github.com/Hamri-language/Hamri), reimplemented properly
    # here as a bare-expression statement (matching chapa/rudisha's own
    # style) rather than the original's now-defunct 'aina(x)' call form.
-   keyword = r'(chapa|kama|jaza|kwisha|kwanza|eleza|sivyo|wakati|huku|\bkutoka\b|\bhadi\b|\brudisha\b|\bweka\b|\bkwenye\b|\bidadi\b|\bondoa\b|\bdarasa\b|\bleta\b|\baina\b|\binazidi\b|\bhaizidi\b|\bni\b|\bkabisa\b|\bhakika\b|\bongeza\b|\bpunguza\b|\bmara\b|\bgawa\b|\bsawa\b)'
+   # 'sawa' used to be a single-word operator on its own; it's now a
+   # two-word phrase, 'sawa na' ("equal to") - \bsawa\s+na\b matches both
+   # words (with any run of whitespace between them) as ONE token, so
+   # finditer() below never re-visits 'na' on its own afterwards (it just
+   # resumes scanning right after this match). Must come before a bare
+   # '\bna\b' would ever be added as its own keyword/operator - there
+   # isn't one today, so 'na' outside this phrase is just an ordinary
+   # variable name, same as any other unreserved word.
+   keyword = r'(chapa|kama|jaza|kwisha|kwanza|eleza|sivyo|wakati|huku|\bkutoka\b|\bhadi\b|\brudisha\b|\bweka\b|\bkwenye\b|\bidadi\b|\bondoa\b|\bdarasa\b|\bleta\b|\baina\b|\binazidi\b|\bhaizidi\b|\bni\b|\bkabisa\b|\bhakika\b|\bongeza\b|\bpunguza\b|\bmara\b|\bgawa\b|\bsawa\s+na\b)'
    # NOTE: '[' and ']' used to be written as '\\[' and '\\]' here, which in
    # a raw string is an escaped literal BACKSLASH followed by a bracket -
    # not the bracket itself. That silently meant square brackets were
@@ -166,10 +179,15 @@ class LexicalParser:
                # like any other reserved word, but the rest of the
                # interpreter expects to see the symbol ('>','<','=') it
                # already knows how to handle - so swap it in here, once,
-               # at the source.
-               if value in WORD_OPERATORS:
+               # at the source. Collapsed to single spaces before the
+               # dict lookup - 'sawa na' is two words, and the regex
+               # match (\bsawa\s+na\b) allows any run of whitespace
+               # between them, but the dict key is written with exactly
+               # one space.
+               normalized_value = ' '.join(value.split())
+               if normalized_value in WORD_OPERATORS:
                   token_type = 'operator'
-                  value = WORD_OPERATORS[value]
+                  value = WORD_OPERATORS[normalized_value]
                elif value in OPERATOR_KEYWORDS:
                   token_type = 'operator'
 
