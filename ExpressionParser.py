@@ -1,89 +1,187 @@
 from Objects import *
 from Logger import Log
-
-class ExpressionParser:
-    def __init__(self, args):
-        # Initialize the ExpressionParser with the given arguments (tokens)
-        self.tokens = args
         
-        # Define the operators and their corresponding Expression classes
+class ExpressionParser:
+    def __init__(self,args):
+        self.tokens = args
+
         self.operators = {
-            '+': AdditionExpression,
-            '-': SubtractionExpression,
-            '*': MultiplicationExpression,
-            '/': DivisionExpression
+
+        '+': AdditionExpression,
+        '-': SubtractionExpression,
+        '*': MultiplicationExpression,
+        '/': DivisionExpression,
+        '==': EqualsExpression,
+        '!=': NotEqualsExpression,
+        '<': LessThanExpression,
+        '>': GreaterThanExpression,
+        '<=': LessEqualExpression,
+        '>=': GreaterEqualExpression,
+        'kabisa': StrictEqualsExpression,
+        'hakika': StrictEqualsExpression
+
         }
-    
+
+
     def parse(self):
-        # Set the return value to the value of the first token in the token list
+        
+        #print("tokens before parsing: ",self.tokens)
+        
         return_val = self.tokens[0]
         
-        # Iterate through the tokens starting from the second token
-        for count, i in enumerate(self.tokens[1:]):
-            # Check if the next element in the list is a token
-            if type(i).__name__ == 'TokenObj':
-                # If the token is an operator, use its value to match the correct Expression class from self.operators
-                if i.value in self.operators.keys():
-                    return_val = self.operators[i.value]((return_val, self.tokens[count + 2]))
+        #for the first value in expression
         
+        for count,i in enumerate(self.tokens[1:]):
+            if type(i).__name__ == 'TokenObj':
+                if i.value in self.operators.keys():
+                    #print('found operator ',i.value,' in pass ',count)
+                    #print('operands: left ',return_val," right ",self.tokens[count + 2])
+                    return_val = self.operators[i.value]((return_val,self.tokens[count + 2]))
+                    #print('result object: ',return_val)
+
+        
+        #print("tokens results after parsing: ",self.tokens)
+        #print('results after parsing: ',return_val)
         return return_val
-
-
-class Expression:
-    def __init__(self, values):
-        # Initialize an Expression with the given values (left and right operands)
+                
+        
+class AdditionExpression:
+    
+    def __init__(self,values):
         self.left = values[0]
         self.right = values[1]
         
-    def evaluate(self):
-        pass
         
+    def evaluate(self):
 
-class AdditionExpression(Expression):
+        Log(self.left,'Addition operation')
+        Log(self.right,'Addition operation')
+
+        left = self.left.evaluate()
+        right = self.right.evaluate()
+
+        # Auto-stringify when mixing text with a number (e.g. "x is: " + x)
+        # instead of letting Python's str+int TypeError leak through -
+        # numeric + numeric still adds normally.
+        if isinstance(left,str) or isinstance(right,str):
+            return '{}{}'.format(left,right)
+        return left + right
+
+
+class MultiplicationExpression:
+
+    def __init__(self,values):
+        self.left = values[0]
+        self.right = values[1]
+
     def evaluate(self):
-        # Log the left and right operands for addition operation
-        Log(self.left, "Addition operation")
-        Log(self.right, "Addition operation")
-        
-        # Evaluate and return the addition of the left and right operands
-        return self.left.evaluate() + self.right.evaluate()
-    
-class SubtractionExpression(Expression):
-    def evaluate(self):
-        # Log the left and right operands for subtraction operation
-        Log(self.left, "Subtraction operation")
-        Log(self.right, "Subtraction operation")
-        
-        # Evaluate and return the subtraction of the left and right operands
-        return self.left.evaluate() - self.right.evaluate()
-    
-class MultiplicationExpression(Expression):
-    def evaluate(self):
-        # Log the left and right operands for multiplication operation
-        Log(self.left, "Multiplication operation")
-        Log(self.right, "Multiplication operation")
-        
-        # Evaluate and return the multiplication of the left and right operands
         return self.left.evaluate() * self.right.evaluate()
-    
-class DivisionExpression(Expression):
+
+
+class DivisionExpression:
+
+    def __init__(self,values):
+        self.left = values[0]
+        self.right = values[1]
+
     def evaluate(self):
-        # Log the left and right operands for division operation
-        Log(self.left, "Division operation")
-        Log(self.right, "Division operation")
-        
-        # Evaluate and return the division of the left and right operands
-        return self.left.evaluate() / self.right.evaluate()
+        # True division (e.g. 7/2 -> 3.5) since there's no separate Float
+        # type in this language yet - a whole-number result like 10/2
+        # still comes back as a plain 5 thanks to the int() cast below.
+        result = self.left.evaluate() / self.right.evaluate()
+        return int(result) if result == int(result) else result
+
+
+class SubtractionExpression:
+
+    def __init__(self,values):
+        self.left = values[0]
+        self.right = values[1]
+
+    def evaluate(self):
+        Log(self.left,'Subtraction operation')
+        Log(self.right,'Subtraction operation')
+
+        return self.left.evaluate() - self.right.evaluate()
+
+
+class EqualsExpression:
+
+    def __init__(self,values):
+        self.left = values[0]
+        self.right = values[1]
+
+    def evaluate(self):
+        return self.left.evaluate() == self.right.evaluate()
+
+
+class NotEqualsExpression:
+
+    def __init__(self,values):
+        self.left = values[0]
+        self.right = values[1]
+
+    def evaluate(self):
+        return self.left.evaluate() != self.right.evaluate()
+
+
+class LessThanExpression:
+
+    def __init__(self,values):
+        self.left = values[0]
+        self.right = values[1]
+
+    def evaluate(self):
+        return self.left.evaluate() < self.right.evaluate()
+
+
+class GreaterThanExpression:
+
+    def __init__(self,values):
+        self.left = values[0]
+        self.right = values[1]
+
+    def evaluate(self):
+        return self.left.evaluate() > self.right.evaluate()
+
+
+class LessEqualExpression:
+
+    def __init__(self,values):
+        self.left = values[0]
+        self.right = values[1]
+
+    def evaluate(self):
+        return self.left.evaluate() <= self.right.evaluate()
+
+
+class GreaterEqualExpression:
+
+    def __init__(self,values):
+        self.left = values[0]
+        self.right = values[1]
+
+    def evaluate(self):
+        return self.left.evaluate() >= self.right.evaluate()
+
+
+class StrictEqualsExpression:
+    # 'kabisa' ("completely/exactly") - strict equality: true only if both
+    # value AND type match. Plain '==' relies on Python's own equality,
+    # where e.g. `true == 1` is True (bool is a subclass of int) - kabisa
+    # is for when that distinction matters.
+
+    def __init__(self,values):
+        self.left = values[0]
+        self.right = values[1]
+
+    def evaluate(self):
+        left = self.left.evaluate()
+        right = self.right.evaluate()
+        return type(left) == type(right) and left == right
 
 
 class ArgumentConstructorExpression:
-    def __init__(self, values):
-        pass
 
-# The code defines an `ExpressionParser` class responsible for parsing expressions using the given tokens.
-# The `parse` method of the `ExpressionParser` class iterates through the tokens, evaluates the expression, and returns the result.
-# The `ExpressionParser` class also contains an `operators` dictionary that maps operators to their corresponding `Expression` classes (`AdditionExpression`, `SubtractionExpression`, etc.).
-# The `Expression` class represents a generic expression with a left operand (`self.left`) and a right operand (`self.right`).
-# Each specific expression class (e.g., `AdditionExpression`, `SubtractionExpression`, etc.) extends the `Expression` class and overrides the `evaluate` method to perform the corresponding operation.
-# The overridden `evaluate` method logs the left and right operands for the specific operation and returns the evaluated result.
-# The `ArgumentConstructorExpression` class is empty and does not contain any specific functionality.
+    def __init__(self,values):
+        pass

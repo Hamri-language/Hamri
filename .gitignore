@@ -1,0 +1,25 @@
+# Local dev-environment scaffolding (DDEV/Lando) - machine-specific, not
+# part of the actual project.
+.ddev/
+.lando.yml
+
+# Local PHP framework/runtime cache used by the website shell (index.php,
+# lib/) that isn't part of the Hamri language project itself.
+data/
+lib/
+tmp/
+index.php
+.htaccess
+
+# Stale duplicate copy of the interpreter modules (pre-dates this port -
+# the real source lives at the repo root now, same as before).
+modules/
+
+# OS/editor cruft
+.DS_Store
+__pycache__/
+*.pyc
+
+# Editor/IDE
+.vscode/
+.idea/

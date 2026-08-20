@@ -1,84 +1,112 @@
-from SymbolTable import symbolTable  # Importing the symbolTable module
-from Errors import Error  # Importing the Error module
+from SymbolTable import symbolTable
 
-# The Object class represents a generic object.
+from Errors import Error
+
 class Object:
-    def __init__(self, value):
-        self.token = value  # Initialize the token attribute with the provided value
-        
-    def return_type(self):
-        pass
-        
+    def __init__(self,value):
+        self.token = value
         
     def cast(self):
-        casted_val = self.token  # Start with the original token value
+        casted_val = self.token
         data_types = {
-            'string': Str,  # Mapping the string data type to the Str class
-            'integer': Int,  # Mapping the integer data type to the Int class
-            'boolean': Bool,  # Mapping the boolean data type to the Bool class
-            'variable': Var  # Mapping the variable data type to the Var class
+        
+        'string':Str,
+        'integer':Int,
+        'boolean':Bool,
+        'variable':Var
+        
         }
         if self.token.token_type in data_types.keys():
-            # If the token's type is in the data_types dictionary, create an instance of the corresponding class
             casted_val = data_types[self.token.token_type](self.token.value)
+            
+        return casted_val
+            
+        
+        
+        
 
-        return casted_val  # Return the casted value
-
-
-# The Var class represents a variable object.
 class Var(Object):
-    def __init__(self, value):
-        self.mode = 1 if type(value).__name__ == 'tuple' else 2  # Determine the mode based on the type of the value
+    def __init__(self,value):
+
+        self.mode = 1 if type(value).__name__ == 'tuple' else 2
+
 
         if self.mode == 1:
-            # If mode is 1, it means the value is a tuple containing name, value, and scope
-            self.name, self.value, self.scope = value
+            # A 4th tuple element ('qualify') is optional - True means
+            # this is an ordinary user-level local variable (from a plain
+            # '=' assignment, or a huku/jaza-created variable) that should
+            # be isolated to whichever function/method call is currently
+            # executing (see SymbolTable.write_local). Callers that
+            # already pass a fully call-qualified name themselves
+            # (function parameter binding, 'nafsi' binding, parameter
+            # placeholder creation) omit it / leave it False, since
+            # qualifying an already-qualified key again would double it up.
+            if len(value) == 4:
+                self.name,self.value,self.scope,self.qualify = value
+            else:
+                self.name,self.value,self.scope = value
+                self.qualify = False
+
         else:
-            self.name = value  # If mode is 2, it means the value is only the variable name
-            
-    def return_type(self):
-        return '<\'Anwani\'>'
+            self.name = value
+
+
 
     def evaluate(self):
-        result = False  # Initialize the result variable as False
+
+        result = False
 
         if self.mode == 1:
-            # If mode is 1, it means the variable is being assigned a value
-            symbolTable.table['variables'][self.scope][self.name] = self.value  # Assign the value to the variable
-            result = True  # Set the result as True, indicating successful assignment
+            # Evaluate the right-hand side NOW and store the plain result
+            # (wrapped in Literal), not the unevaluated expression object.
+            # Storing the raw expression broke self-referential assignment
+            # (e.g. "i = i + 1"): the stored expression for 'i' would
+            # itself contain a reference to 'i', so reading it back later
+            # tried to evaluate 'i' in terms of itself forever - fine for
+            # one-shot code, but fatal for any loop counter.
+            # Not every caller passes an expression Object here - function
+            # parameter placeholders assign a plain '' string directly -
+            # so only call .evaluate() when there's actually one to call.
+            evaluated = self.value.evaluate() if hasattr(self.value,'evaluate') else self.value
+            if self.qualify and self.scope == 'local':
+                symbolTable.write_local(self.name,Literal(evaluated))
+            else:
+                symbolTable.table['variables'][self.scope][self.name] = Literal(evaluated)
+            result = True
         else:
-            result = symbolTable.fetch_variable(self.name)  # Fetch the value of the variable from the symbol table
+            
+            result = symbolTable.fetch_variable(self.name)
             if result:
                 result = symbolTable.fetch_variable(self.name).evaluate()
-                # If the variable is found, evaluate its value recursively
             else:
-                Error.throwException('anwani', self.name)
-                # If the variable is not found, throw an exception and set the result as False
+                Error.throwException('anwani',self.name)            
+                result = False
+        
+        return result
 
-        return result  # Return the result
-
-
-# The Int class represents an integer object.
 class Int(Object):
     def evaluate(self):
-        return int(self.token)  # Return the integer value of the token
+        
+        return int(self.token)
 
-
-# The Str class represents a string object.
 class Str(Object):
     def evaluate(self):
-        return '{}'.format(self.token)  # Return the string value of the token
+        return '{}'.format(self.token)
 
-
-# The Bool class represents a boolean object.
 class Bool(Object):
     def evaluate(self):
-        return bool(self.token.capitalize())  # Return the boolean value of the token
+        # bool(str) in Python is True for ANY non-empty string - including
+        # "false" itself - so this used to make every boolean true.
+        return str(self.token).strip().lower() == 'true'
 
+class Literal(Object):
+    # Wraps an already-evaluated plain Python value (bool/int/float/str)
+    # so it can be stored in a variable and re-read later through the
+    # same .evaluate() interface as every other Object, without needing
+    # to re-parse or re-cast it from text.
+    def evaluate(self):
+        return self.token
+    
+    
 
-# The code above defines several classes for different types of objects, such as variables, integers, strings, and booleans.
-# These classes inherit from the Object class and provide the evaluate method, which returns the evaluated value of the object.
-# The Var class handles variable assignments and retrieval, the Int class converts the token to an integer, the Str class converts the token to a string,
-# and the Bool class converts the token to a boolean value.
-# The Object class also provides the cast method, which allows for type casting of objects.
 

@@ -9,8 +9,13 @@ import os
 
 from LexicalParser import LexicalParser
 from StatementParser import StatementParser
-from Console import console
+from SymbolTable import symbolTable
 from Logger import Logs,LogKeys
+
+# NOTE: Console.py's singleton `console` (previously imported here) is no
+# longer used - StatementParser now takes the console widget directly as
+# an argument to .parse(), instead of routing print/error output through
+# a separate global. See __execute() below.
 
 class CustomText(Text):
     def __init__(self, *args, **kwargs):
@@ -24,7 +29,19 @@ class CustomText(Text):
 
     def _proxy(self, command, *args):
         cmd = (self._orig, command) + args
-        result = self.tk.call(cmd)
+        try:
+            result = self.tk.call(cmd)
+        except tk.TclError:
+            # Benign Tcl-level errors happen here routinely - e.g. a
+            # <<Paste>> triggers "delete sel.first sel.last" even when
+            # nothing is selected, which Tcl reports as an error ("text
+            # doesn't contain any characters tagged with sel") rather than
+            # just a no-op. Uncaught, that exception propagates straight
+            # out of Tk's mainloop and kills the whole application instead
+            # of just skipping the no-op delete. Swallow it here and let
+            # the rest of the command (e.g. the actual insert half of a
+            # paste) proceed normally.
+            return ""
 
         if command in ("insert", "delete", "replace"):
             self.event_generate("<<TextModified>>")
@@ -54,6 +71,21 @@ class Notepad:
         self.__thisTextArea = CustomText(self.__thisCodeFrame, font=("Courier", 12, "normal"))
         self.__thisTextArea.pack(side=TOP, fill='both', expand=1)
 
+        # A visible in-window toolbar with a Run button - on macOS the Menu
+        # bar below is drawn in the system menu bar at the top of the
+        # screen (not inside the window itself), and a Tk app launched
+        # from a terminal (rather than a real .app bundle) doesn't always
+        # grab menu focus reliably. This button guarantees there's always
+        # a way to run the script without depending on that.
+        self.__thisToolbar = ttk.Frame(self.__thisCodeFrame)
+        self.__thisToolbar.pack(side=TOP, fill='x')
+        self.__thisRunButton = ttk.Button(self.__thisToolbar, text="Run ▶", command=self.__execute)
+        self.__thisRunButton.pack(side=LEFT, padx=4, pady=4)
+        self.__thisClearEditorButton = ttk.Button(self.__thisToolbar, text="Clear Editor", command=self.__clearEditor)
+        self.__thisClearEditorButton.pack(side=LEFT, padx=4, pady=4)
+        self.__thisClearConsoleButton = ttk.Button(self.__thisToolbar, text="Clear Console", command=self.__clearConsole)
+        self.__thisClearConsoleButton.pack(side=LEFT, padx=4, pady=4)
+
         # Create the console for displaying output
         self.__thisConsole = CustomText(self.__thisCodeFrame, font=("Courier", 12, "normal"), height=18, bg="black", fg="white")
         self.__thisConsole.pack(side=TOP, fill='x')
@@ -68,6 +100,9 @@ class Notepad:
         self.__thisFileMenu.add_command(label="Open", command=self.__openFile)
         self.__thisFileMenu.add_command(label="Save", command=self.__saveFile)
         self.__thisFileMenu.add_command(label="Execute", command=self.__execute)
+        self.__thisFileMenu.add_separator()
+        self.__thisFileMenu.add_command(label="Clear Editor", command=self.__clearEditor)
+        self.__thisFileMenu.add_command(label="Clear Console", command=self.__clearConsole)
         self.__thisFileMenu.add_separator()
         self.__thisFileMenu.add_command(label="Exit", command=self.__quitApplication)
         self.__thisMenuBar.add_cascade(label="File", menu=self.__thisFileMenu)
@@ -88,6 +123,12 @@ class Notepad:
         # Bind events to the text area
         self.__thisTextArea.bind("<<TextModified>>", self.__generateTags)
 
+        # Keyboard shortcut for running the script (Cmd+R on macOS,
+        # Ctrl+R elsewhere) as a second fallback alongside the Run button,
+        # independent of the File menu / menu bar entirely.
+        self.__root.bind_all("<Command-r>", lambda event: self.__execute())
+        self.__root.bind_all("<Control-r>", lambda event: self.__execute())
+
     def __generateTags(self, event=None):
         """Generates tags for syntax highlighting"""
         # Clear existing tags
@@ -96,9 +137,12 @@ class Notepad:
         self.__thisTextArea.tag_delete("Token.Operator")
         self.__thisTextArea.tag_delete("Token.Literal")
 
-        # Parse code and generate tokens
+        # Parse code and generate tokens. from_text=True is required here -
+        # without it, LexicalParser treats its argument as a *file path* by
+        # default (see main.py) rather than literal source text, which
+        # would raise on every keystroke since this text isn't a real file.
         code = self.__thisTextArea.get("1.0", "end-1c")
-        lexer = LexicalParser(code).parse()
+        lexer = LexicalParser(code, from_text=True).parse()
         self.__Tokens = lexer.token_list
         
 
@@ -167,20 +211,31 @@ class Notepad:
         """Execute the code and display output in the console"""
         code = self.__thisTextArea.get("1.0", "end-1c")
 
-        # Perform lexical analysis
-        lexer = LexicalParser(code).parse()
+        # Reset the interpreter's global state before each run, so a
+        # previous Execute click's variables/classes/functions don't leak
+        # into this one.
+        symbolTable.reset()
+
+        # Perform lexical analysis (from_text=True - see __generateTags)
+        lexer = LexicalParser(code, from_text=True).parse()
         tokens = lexer.token_list
 
-        # Perform statement parsing
-        statements = StatementParser(tokens).parse()
-        
-        #pass our console object to the runtime sequence and clear it
-        
-        console.use_console(self.__thisConsole)
+        # Perform statement parsing, passing the console Text widget
+        # straight in - StatementParser routes all chapa/error output to
+        # whatever's passed here (or falls back to a bare print() if
+        # nothing is), rather than through the old Console.py singleton.
+        statements = StatementParser(tokens).parse(self.__thisConsole)
 
-        # Execute the statements and capture the output
-        
+        # Execute the parsed statements
         result = statements.execute()
+
+    def __clearEditor(self):
+        """Clear all text out of the code editor"""
+        self.__thisTextArea.delete("1.0", "end")
+
+    def __clearConsole(self):
+        """Clear all output out of the console pane"""
+        self.__thisConsole.delete("1.0", "end")
 
     def __quitApplication(self):
         """Quit the application"""
