@@ -1221,15 +1221,22 @@ class FunctionDefinitionStatement(Statement):
 
 
 class InputStatement(Statement):
-    
+
     def __init__(self,arg):
-        
+
         self.value = arg[0].evaluate()
-        
-        self.storage = arg[1].name
-        
-        
-        
+
+        # arg[1] is the jaza destination. Almost always a plain variable
+        # (`jaza "prompt:", jina`), in which case read_operand() casts it
+        # to a Var with a `.name`. But read_operand() also runs
+        # try_parse_property_access() first, so `jaza "...", nafsi.jina`
+        # (or any `obj.member`) - a natural thing to write inside a
+        # constructor - comes back as a PropertyExpression instead, which
+        # has no `.name`. Keep the raw target here and branch on its
+        # actual type in execute() rather than assuming .name exists.
+        self.target = arg[1]
+
+
     def execute(self):
 
         # symbolTable.read_input() falls back to a plain terminal input()
@@ -1244,13 +1251,25 @@ class InputStatement(Statement):
         token_type = 'integer' if raw.lstrip('-').isdigit() else 'string'
 
         var = Object(TokenObj(token_type,raw,0,0,0)).cast()
+        value = Literal(var.evaluate())
 
-        # Same call_flag-based scope check as huku's loop variable (see
-        # ForStatement.execute()) - symbolTable.get_scope('var-scope') only
-        # reflects parse-time bookkeeping, which has already unwound by
-        # the time this runs.
-        var_scope = 'local' if symbolTable.call_flag else 'global'
-        symbolTable.write_variable(var_scope,self.storage,Literal(var.evaluate()))
+        if isinstance(self.target,PropertyExpression):
+            # Write straight onto the instance's own property table, the
+            # same way PropertyAssignmentStatement does for a plain
+            # `obj.jina = ...` - 'nafsi' inside a method is nothing
+            # special, just a local variable holding the current
+            # instance, same as everywhere else in the language.
+            instance = _fetch_instance(self.target.object_name)
+            if instance is None:
+                return
+            symbolTable.table['variables'][instance.scope_key][self.target.property_name] = value
+        else:
+            # Same call_flag-based scope check as huku's loop variable (see
+            # ForStatement.execute()) - symbolTable.get_scope('var-scope') only
+            # reflects parse-time bookkeeping, which has already unwound by
+            # the time this runs.
+            var_scope = 'local' if symbolTable.call_flag else 'global'
+            symbolTable.write_variable(var_scope,self.target.name,value)
         
         
 

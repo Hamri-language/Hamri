@@ -75,7 +75,7 @@ symbols.
 | `ni` | is | Word form of `=` — e.g. `umri ni 20` |
 | `inazidi` | exceeds | Word form of `>` |
 | `haizidi` | does not exceed | Word form of `<` |
-| `sawa` | equal, okay | Word form of `==` (loose equality) |
+| `sawa na` | equal to | Word form of `==` (loose equality) |
 | `kabisa` / `hakika` | completely / certainly | Strict equality — true only if both value *and* type match |
 | `ongeza` | add, increase | Word form of `+` |
 | `punguza` | reduce, decrease | Word form of `-` |
@@ -280,7 +280,7 @@ eleza square(x)
 kwisha
 
 eleza safe_divide(a, b)
-    kama b sawa 0
+    kama b sawa na 0
         chapa "Can't divide by zero"
         rudisha
     kwisha
@@ -310,8 +310,8 @@ kwisha
 | `-` | `punguza` | Subtraction | |
 | `*` | `mara` | Multiplication | |
 | `/` | `gawa` | Division | Returns a whole number when it divides evenly (`10/2` → `5`), otherwise a decimal (`7/2` → `3.5`) |
-| `==` | `sawa` | Loose equality | `1 == true` is true — numbers and booleans compare loosely |
-| | `kabisa` / `hakika` | Strict equality | True only if value *and* type match — `1 kabisa true` is false, unlike `==`/`sawa` |
+| `==` | `sawa na` | Loose equality | `1 == true` is true — numbers and booleans compare loosely |
+| | `kabisa` / `hakika` | Strict equality | True only if value *and* type match — `1 kabisa true` is false, unlike `==`/`sawa na` |
 
 ## Comments
 
