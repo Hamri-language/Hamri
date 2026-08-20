@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — language feature expansion + interpreter fixes
+## v1.0.3 — language feature expansion + interpreter fixes
 
 This is a large update that brings the interpreter up to date with an
 extended, independently-developed fork of Hamri (originally built out
@@ -188,11 +188,52 @@ document the language and confirms it still executes successfully.
   number literals, no inheritance or static/shared class variables, no
   chained list indexing (`matrix[0][1]` — index into an intermediate
   variable instead), and `ondoa` removes by position, not by value.
-- `Notepad.py`'s live syntax-highlighting (`__generateTags`) was already
-  non-functional before this change (it compares `token.type` — a bound
-  method, not the token's type string — against capitalized category
-  names that don't correspond to any of the lexer's actual token types,
-  and passes raw character offsets to Tkinter APIs that expect
-  `"line.column"` index strings). Left as-is; only the code-execution
-  path (`__execute()`) was fixed, since that's what was actually broken
-  by this change specifically.
+
+### Desktop IDE follow-up fixes
+
+Two rough edges called out (but deliberately left unfixed) earlier in
+this same release are now actually fixed too, along with a related
+lexer bug the highlighting fix surfaced along the way.
+
+- **`jaza` no longer silently blocks on the terminal when run through
+  the desktop Notepad.** Previously `InputStatement.execute()` always
+  called Python's built-in `input()` directly, so a script using `jaza`
+  and run via `Notepad.py` would appear to hang — it was actually
+  waiting on stdin in whatever terminal launched the IDE, easy to miss
+  entirely. `SymbolTable` now has a pluggable `input_handler` hook
+  (mirroring the existing `module_loader` hook `leta` uses) - `jaza`
+  calls `symbolTable.read_input(prompt)`, which uses the hook if one's
+  set, and falls back to plain `input()` otherwise (so `main.py` is
+  unaffected). `Notepad.py` wires this to a proper
+  `tkinter.simpledialog.askstring` dialog.
+- **Fixed `Notepad.py`'s live syntax highlighting (`__generateTags`),**
+  previously entirely non-functional: it compared `token.type` — a
+  *method* on `TokenObj`, not the token's type string (`token.token_type`
+  is the actual attribute) — against capitalized category names
+  (`"Keyword"`, `"Identifier"`, etc.) that don't match any of the
+  lexer's real, lowercase token types (`keyword`, `variable`, `operator`,
+  `boolean`, `integer`, `string`) at all, so no branch ever matched and
+  no token was ever colored. It also passed raw character offsets
+  straight to `tag_add()`, which expects Tkinter's own `"line.column"`
+  index strings, not plain offsets. Both are now fixed: correct type
+  comparison, correct index conversion, and tags are re-applied (not
+  recreated) on every edit.
+- **Fixed a related lexer bug the above surfaced**: a `string` token's
+  `value` has its surrounding quote characters stripped off (so the
+  interpreter sees the bare text, not the quotes) — but `TokenObj`
+  computed its length from that same already-stripped value, so it came
+  out 2 characters short of the token's actual span in the source. This
+  didn't affect execution (nothing on the interpretation path reads a
+  token's length or span), but it meant highlighting a string literal
+  stopped 2 characters early. `TokenObj` now takes an explicit
+  `raw_length` (the un-stripped match length), so `.size()`/`.span()`
+  reflect the real source position for every token type.
+
+## v1.0.2 — initial commit
+
+The starting point this changelog's v1.0.3 entry above is measured
+against: the original interpreter (`LexicalParser` → `StatementParser` →
+`Objects`/`ExpressionParser`/`SymbolTable`/`Errors`), `main.py`, and the
+`Notepad.py` desktop IDE, supporting `kwanza`/`kwisha`, `chapa`, `jaza`,
+`eleza`, and a partially-wired `kama`/`aina`, tagged retroactively as a
+version marker for the baseline this project started from.

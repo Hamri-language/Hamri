@@ -1232,7 +1232,11 @@ class InputStatement(Statement):
         
     def execute(self):
 
-        raw = input(str(self.value))
+        # symbolTable.read_input() falls back to a plain terminal input()
+        # prompt unless a host environment (e.g. the desktop Notepad) has
+        # set symbolTable.input_handler to something else, like a GUI
+        # dialog - see SymbolTable.read_input().
+        raw = symbolTable.read_input(str(self.value))
 
         # Auto-detect plain integers (e.g. from a numeric prompt like age)
         # so the result can be used with comparisons/arithmetic in 'kama'

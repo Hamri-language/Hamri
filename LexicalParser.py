@@ -154,6 +154,13 @@ class LexicalParser:
 
                token_type = t.name
                value = t_[0]
+               # How many characters this token actually occupies in the
+               # source line - captured before any of the substitutions
+               # below (quote-stripping, word-operator swaps) shorten
+               # 'value' itself, so TokenObj's position/highlighting
+               # methods (span()/size()) still line up with the real
+               # source text rather than whatever 'value' ends up as.
+               raw_length = len(value)
 
                # Word-form operators (inazidi/haizidi/ni) tag as 'keyword'
                # like any other reserved word, but the rest of the
@@ -169,7 +176,8 @@ class LexicalParser:
                self.token_list.append(
                   TokenObj(token_type,
                         value.replace('"','').replace('\'','') if token_type == 'string' else value,#remove string quotes statements
-                        t_[1],t_[2],id_
+                        t_[1],t_[2],id_,
+                        raw_length=raw_length
                         )
                   )
                break
@@ -225,13 +233,23 @@ class LexicalParser:
 
    
 class TokenObj:
-   def __init__(self, token_type, value,start,line,offset):
+   def __init__(self, token_type, value,start,line,offset,raw_length=None):
       self.token_type = token_type
       self.value = value
       self.line = line
       self.start = start
       self.offset = offset
-      self.len_ = len(self.value)
+      # raw_length is how many characters this token actually occupies in
+      # the original source line (start:start+raw_length) - normally
+      # identical to len(value), EXCEPT for a 'string' token, whose value
+      # has its surrounding quote characters stripped off (see
+      # LexicalParser.parse()) so the interpreter gets the bare text
+      # rather than the quotes themselves. Without this, len_ would come
+      # out 2 short of the token's real span for every string literal -
+      # harmless for interpretation (nothing execution-related reads
+      # size()/span()), but wrong for anything that maps a token back
+      # onto a position in the source, like syntax highlighting.
+      self.len_ = raw_length if raw_length is not None else len(self.value)
    def value(self):
       return self.value
    
