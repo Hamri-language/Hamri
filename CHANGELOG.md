@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Desktop IDE (`Notepad.py`)
+
+- **Added a light/dark background toggle for the code editor.** A new
+  "Dark Mode" toolbar button (mirrored by a new View menu, for the same
+  reason the Run/Clear buttons exist alongside the File menu - on macOS
+  this app's menu bar isn't always reliably reachable) switches the
+  editor between its original light background and a dark one. Syntax
+  highlighting colors switch with it - `Token.Identifier` was previously
+  hardcoded to plain black, which would have been invisible against a
+  dark background, so it (and every other token color) now comes from a
+  small per-theme color table instead. Scoped to the editor only - the
+  console pane already has its own fixed black background and isn't
+  affected.
+
 ## v1.0.3 — language feature expansion + interpreter fixes
 
 This is a large update that brings the interpreter up to date with an

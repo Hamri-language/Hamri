@@ -59,6 +59,13 @@ class Notepad:
         self.__thisDefaultDir = '/home/bytefrost/Documents/Hamri/Projects/'
         self.__thisFile = None
         self.__Tokens = None
+        # Tracks which background the code editor (not the console, which
+        # already has its own fixed dark look) is currently showing, so
+        # toolbar button/View menu/syntax highlighting can all agree on
+        # which palette to use. Starts light - matches the editor's
+        # original unstyled (default Tk white) appearance, so existing
+        # behavior is unchanged until someone actually switches it.
+        self.__editorDarkMode = False
 
         self.__root.title(self.__thisTitle)
         self.__root.geometry(f"{self.__thisWidth}x{self.__thisHeight}")
@@ -86,6 +93,8 @@ class Notepad:
         self.__thisClearEditorButton.pack(side=LEFT, padx=4, pady=4)
         self.__thisClearConsoleButton = ttk.Button(self.__thisToolbar, text="Clear Console", command=self.__clearConsole)
         self.__thisClearConsoleButton.pack(side=LEFT, padx=4, pady=4)
+        self.__thisThemeButton = ttk.Button(self.__thisToolbar, text="Dark Mode", command=self.__toggleEditorTheme)
+        self.__thisThemeButton.pack(side=LEFT, padx=4, pady=4)
 
         # Create the console for displaying output
         self.__thisConsole = CustomText(self.__thisCodeFrame, font=("Courier", 12, "normal"), height=18, bg="black", fg="white")
@@ -114,6 +123,15 @@ class Notepad:
         self.__thisEditMenu.add_command(label="Copy", command=self.__copy)
         self.__thisEditMenu.add_command(label="Paste", command=self.__paste)
         self.__thisMenuBar.add_cascade(label="Edit", menu=self.__thisEditMenu)
+
+        # Create the View menu - also mirrored by the "Dark Mode" toolbar
+        # button above, for the same reason the Run/Clear buttons exist:
+        # on macOS this menu bar renders in the system menu bar, not the
+        # window itself, and isn't always reliably reachable.
+        self.__thisViewMenu = Menu(self.__thisMenuBar, tearoff=0)
+        self.__thisViewMenu.add_command(label="Dark Mode", command=lambda: self.__applyEditorTheme(True))
+        self.__thisViewMenu.add_command(label="Light Mode", command=lambda: self.__applyEditorTheme(False))
+        self.__thisMenuBar.add_cascade(label="View", menu=self.__thisViewMenu)
 
         # Create the Help menu
         self.__thisHelpMenu = Menu(self.__thisMenuBar, tearoff=0)
@@ -147,6 +165,26 @@ class Notepad:
         'string': 'Token.Literal',
     }
 
+    # Per-theme foreground colors for each highlight tag. Keyword/Operator/
+    # Literal (blue/green/purple) stay readable on both a white and a dark
+    # background as-is, but "Token.Identifier" was hardcoded to plain
+    # black - invisible against a dark editor background - so it's the one
+    # that actually needs to change between themes.
+    _TOKEN_COLORS = {
+        False: {  # light background
+            'Token.Keyword': 'blue',
+            'Token.Identifier': 'black',
+            'Token.Operator': 'green',
+            'Token.Literal': 'purple',
+        },
+        True: {  # dark background
+            'Token.Keyword': '#569cd6',
+            'Token.Identifier': '#f1f1f1',
+            'Token.Operator': '#6a9955',
+            'Token.Literal': '#c586c0',
+        },
+    }
+
     def __generateTags(self, event=None):
         """Generates tags for syntax highlighting"""
         # Remove previous highlighting (tag_remove clears the ranges but
@@ -155,10 +193,11 @@ class Notepad:
         for tag in ("Token.Keyword", "Token.Identifier", "Token.Operator", "Token.Literal"):
             self.__thisTextArea.tag_remove(tag, "1.0", "end")
 
-        self.__thisTextArea.tag_configure("Token.Keyword", foreground="blue", font=("Courier", 12, "bold"))
-        self.__thisTextArea.tag_configure("Token.Identifier", foreground="black", font=("Courier", 12, "normal"))
-        self.__thisTextArea.tag_configure("Token.Operator", foreground="green", font=("Courier", 12, "normal"))
-        self.__thisTextArea.tag_configure("Token.Literal", foreground="purple", font=("Courier", 12, "normal"))
+        colors = self._TOKEN_COLORS[self.__editorDarkMode]
+        self.__thisTextArea.tag_configure("Token.Keyword", foreground=colors['Token.Keyword'], font=("Courier", 12, "bold"))
+        self.__thisTextArea.tag_configure("Token.Identifier", foreground=colors['Token.Identifier'], font=("Courier", 12, "normal"))
+        self.__thisTextArea.tag_configure("Token.Operator", foreground=colors['Token.Operator'], font=("Courier", 12, "normal"))
+        self.__thisTextArea.tag_configure("Token.Literal", foreground=colors['Token.Literal'], font=("Courier", 12, "normal"))
 
         # Parse code and generate tokens. from_text=True is required here -
         # without it, LexicalParser treats its argument as a *file path* by
@@ -281,6 +320,29 @@ class Notepad:
     def __clearConsole(self):
         """Clear all output out of the console pane"""
         self.__thisConsole.delete("1.0", "end")
+
+    def __applyEditorTheme(self, dark):
+        """Switch the code editor's background between light and dark.
+
+        Scoped to the editor only - the console already has its own
+        fixed black/white look (see __init__) and isn't affected here.
+        """
+        self.__editorDarkMode = dark
+        if dark:
+            bg, fg, insertbg, selectbg = '#1e1e1e', '#f1f1f1', '#f1f1f1', '#3d5a73'
+        else:
+            bg, fg, insertbg, selectbg = '#ffffff', '#000000', '#000000', '#c3d9ff'
+        self.__thisTextArea.config(bg=bg, fg=fg, insertbackground=insertbg, selectbackground=selectbg)
+        self.__thisThemeButton.config(text="Light Mode" if dark else "Dark Mode")
+
+        # Re-apply syntax highlighting immediately with the new theme's
+        # colors (see _TOKEN_COLORS) rather than waiting for the next
+        # keystroke to trigger __generateTags via <<TextModified>>.
+        self.__generateTags()
+
+    def __toggleEditorTheme(self):
+        """Flip the editor background between light and dark."""
+        self.__applyEditorTheme(not self.__editorDarkMode)
 
     def __quitApplication(self):
         """Quit the application"""
