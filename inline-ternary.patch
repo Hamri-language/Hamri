@@ -1,0 +1,284 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index e92c2d5..cbe160e 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,22 @@
+ # Changelog
+ 
++## Unreleased
++
++### New language features
++
++- **Inline conditionals: `<value> kama <condition> sivyo <value>`.**
++  The same `kama`/`sivyo` words used for an if-block now also work
++  inline, as a real conditional expression (like Python's
++  `x if cond else y`) usable anywhere a value is expected - an
++  assignment, a `chapa`, a function argument, and so on, e.g.
++  `hali = "mtu mzima" kama umri inazidi 17 sivyo "kijana"`. Only the
++  branch actually taken is ever evaluated. `sivyo` is required; writing
++  `kama` without a matching `sivyo` right after it falls back to
++  starting an ordinary `kama` block instead, exactly as before - so
++  existing scripts that happen to have a bare `kama` following an
++  expression on the same line are unaffected. Chains left to right for
++  an else-if ladder: `"A" kama x sivyo "B" kama y sivyo "C"`.
++
+ ## v1.0.3 — language feature expansion + interpreter fixes
+ 
+ This is a large update that brings the interpreter up to date with an
+@@ -239,34 +256,6 @@ lexer bug the highlighting fix surfaced along the way.
+   console pane already has its own fixed black background and isn't
+   affected.
+ 
+-## Unreleased
+-
+-### Bug fixes
+-
+-- **`jaza` into a property (e.g. `jaza "jina lako ni?:", nafsi.jina`)
+-  crashed with `'PropertyExpression' object has no attribute 'name'`.**
+-  `InputStatement` assumed its destination was always a plain variable
+-  and read `.name` off it directly at parse time, but `read_operand()`
+-  recognizes `obj.member` shapes as a `PropertyExpression` first (the
+-  same logic that makes `chapa mtu1.jina` work), and that class has no
+-  `.name`. `InputStatement` now keeps the raw destination and, at
+-  execute time, writes straight onto the instance's property table for
+-  a `PropertyExpression` target (the same way `obj.jina = value` does)
+-  or falls back to the original plain-variable path otherwise. This was
+-  previously the only way `jaza` could not be used to fill in an
+-  object's property directly inside its own constructor.
+-
+-### Breaking changes
+-
+-- **The loose-equality word operator is now `sawa na`, not `sawa`.**
+-  `Tokens.keyword`'s pattern changed from `\bsawa\b` to `\bsawa\s+na\b`,
+-  so the lexer now matches both words as a single token (same as any
+-  other one-piece word-operator) and `WORD_OPERATORS`'s key changed to
+-  match. Existing scripts using the old bare `sawa` need updating to
+-  `sawa na` — e.g. `kama umri sawa 20` becomes
+-  `kama umri sawa na 20`. `kabisa`/`hakika` (strict equality) are
+-  unaffected.
+-
+ ## v1.0.2 — initial commit
+ 
+ The starting point this changelog's v1.0.3 entry above is measured
+diff --git a/README.md b/README.md
+index 50ff794..d7c4692 100644
+--- a/README.md
++++ b/README.md
+@@ -75,7 +75,7 @@ symbols.
+ | `ni` | is | Word form of `=` — e.g. `umri ni 20` |
+ | `inazidi` | exceeds | Word form of `>` |
+ | `haizidi` | does not exceed | Word form of `<` |
+-| `sawa na` | equal to | Word form of `==` (loose equality) |
++| `sawa` | equal, okay | Word form of `==` (loose equality) |
+ | `kabisa` / `hakika` | completely / certainly | Strict equality — true only if both value *and* type match |
+ | `ongeza` | add, increase | Word form of `+` |
+ | `punguza` | reduce, decrease | Word form of `-` |
+@@ -194,6 +194,40 @@ kwisha
+ `kama` blocks can be nested inside functions, inside loops, and inside
+ each other.
+ 
++## Inline conditionals: `kama ... sivyo`
++
++The same `kama`/`sivyo` words also work inline, as a value rather than
++a whole block — pick one of two values based on a condition, right
++inside an assignment, a `chapa`, or anywhere else a value is expected.
++It reads left to right: `<value if true> kama <condition> sivyo <value
++if false>`.
++
++```
++kwanza
++    umri = 20
++    hali = "mtu mzima" kama umri inazidi 17 sivyo "kijana"
++    chapa hali
++kwisha
++```
++
++Only the branch actually picked is ever evaluated, so it's safe to
++reach for something that would otherwise error out (like an unset
++property) on the branch that never runs. `sivyo` is required — unlike
++the block form, there's no "no-op if false" version of this. Chain
++several together for an else-if ladder:
++
++```
++kwanza
++    alama = 72
++    daraja = "A" kama alama inazidi 89 sivyo "B" kama alama inazidi 79 sivyo "C"
++    chapa daraja
++kwisha
++```
++
++> Writing `kama` without a matching `sivyo` right after it isn't
++> treated as an inline conditional at all — it falls back to starting
++> a brand new `kama` block instead, same as if it were on its own line.
++
+ ## Loops: `wakati`
+ 
+ `wakati` ("while") repeats its block for as long as the condition stays
+@@ -280,7 +314,7 @@ eleza square(x)
+ kwisha
+ 
+ eleza safe_divide(a, b)
+-    kama b sawa na 0
++    kama b sawa 0
+         chapa "Can't divide by zero"
+         rudisha
+     kwisha
+@@ -310,8 +344,8 @@ kwisha
+ | `-` | `punguza` | Subtraction | |
+ | `*` | `mara` | Multiplication | |
+ | `/` | `gawa` | Division | Returns a whole number when it divides evenly (`10/2` → `5`), otherwise a decimal (`7/2` → `3.5`) |
+-| `==` | `sawa na` | Loose equality | `1 == true` is true — numbers and booleans compare loosely |
+-| | `kabisa` / `hakika` | Strict equality | True only if value *and* type match — `1 kabisa true` is false, unlike `==`/`sawa na` |
++| `==` | `sawa` | Loose equality | `1 == true` is true — numbers and booleans compare loosely |
++| | `kabisa` / `hakika` | Strict equality | True only if value *and* type match — `1 kabisa true` is false, unlike `==`/`sawa` |
+ 
+ ## Comments
+ 
+diff --git a/StatementParser.py b/StatementParser.py
+index 2c71e61..b5d270c 100644
+--- a/StatementParser.py
++++ b/StatementParser.py
+@@ -485,8 +485,46 @@ class StatementParser:
+         # the expression.
+         special = self.try_parse_special_value()
+         if special is not None:
+-            return ExpressionParser(self.continue_express(special)).parse()
+-        return ExpressionParser(self.fetch_express()).parse()
++            value = ExpressionParser(self.continue_express(special)).parse()
++        else:
++            value = ExpressionParser(self.fetch_express()).parse()
++        return self.try_parse_ternary(value)
++
++    def try_parse_ternary(self,true_value):
++        # Detects a trailing '<true_value> kama <condition> sivyo
++        # <false_value>' ternary suffix right after an already-parsed
++        # value - a real inline conditional expression (like Python's
++        # 'x if cond else y'), e.g.
++        # `jina kama jina sawa na "Cookie" sivyo "Guest"`. 'kama' is a
++        # keyword, not an operator, so fetch_express()'s own
++        # operand-reading loop already stops cleanly right before it -
++        # this picks up exactly where that left off.
++        #
++        # Requires 'sivyo' - if it's missing (a malformed/incomplete
++        # ternary), token_position is rewound to right where it was
++        # before this method ever looked at 'kama', so the caller falls
++        # back to treating 'kama' as the start of a brand new statement
++        # (an ordinary if-block) exactly as it always has, rather than
++        # this method guessing at what a half-written ternary meant.
++        if self.next_token() is None or self.next_token().value != 'kama':
++            return true_value
++
++        rollback_position = self.token_position
++        self.token_position = self.token_position + 1  # land on 'kama'
++        condition = ExpressionParser(self.fetch_express()).parse()
++
++        if self.next_token() is None or self.next_token().value != 'sivyo':
++            self.token_position = rollback_position
++            return true_value
++
++        self.token_position = self.token_position + 1  # land on 'sivyo'
++        # Recursing (rather than a single fetch_express()) lets the
++        # false-branch itself be another ternary, so
++        # 'a kama x sivyo b kama y sivyo c' chains like an else-if
++        # ladder, evaluated left to right.
++        false_value = self.parse_expression_value()
++
++        return ConditionalExpression(true_value,condition,false_value)
+ 
+     def continue_express(self,first):
+         # Same operator-chaining loop as fetch_express()'s own while-loop,
+@@ -1019,6 +1057,31 @@ def _fetch_instance(name):
+     return value
+ 
+ 
++class ConditionalExpression(Object):
++    # `<true_value> kama <condition> sivyo <false_value>` used as a
++    # value - a real inline conditional expression (Python's ternary,
++    # `x if cond else y`), e.g.
++    # `nafsi.jina = jina kama jina sawa na "Cookie" sivyo "Guest"`.
++    # Built by try_parse_ternary() (see parse_expression_value()) - not
++    # tied to any ExpressionParser operator symbol, since it isn't a
++    # binary operator at all, just two branches and a condition.
++    #
++    # Evaluated lazily: only the branch actually taken is ever
++    # evaluated, exactly like the kama/sivyo *statement* form already
++    # behaves - so a false_value that would itself error out (e.g.
++    # reading a property that's only set on the true branch) is never
++    # touched unless the condition actually picks it.
++    def __init__(self,true_value,condition,false_value):
++        self.true_value = true_value
++        self.condition = condition
++        self.false_value = false_value
++
++    def evaluate(self):
++        if self.condition.evaluate():
++            return self.true_value.evaluate()
++        return self.false_value.evaluate()
++
++
+ class PropertyExpression(Object):
+     # `obj.jina` used as a value - `x = mtu1.jina` or `chapa mtu1.jina`.
+     def __init__(self,object_name,property_name):
+@@ -1221,22 +1284,15 @@ class FunctionDefinitionStatement(Statement):
+ 
+ 
+ class InputStatement(Statement):
+-
++    
+     def __init__(self,arg):
+-
++        
+         self.value = arg[0].evaluate()
+-
+-        # arg[1] is the jaza destination. Almost always a plain variable
+-        # (`jaza "prompt:", jina`), in which case read_operand() casts it
+-        # to a Var with a `.name`. But read_operand() also runs
+-        # try_parse_property_access() first, so `jaza "...", nafsi.jina`
+-        # (or any `obj.member`) - a natural thing to write inside a
+-        # constructor - comes back as a PropertyExpression instead, which
+-        # has no `.name`. Keep the raw target here and branch on its
+-        # actual type in execute() rather than assuming .name exists.
+-        self.target = arg[1]
+-
+-
++        
++        self.storage = arg[1].name
++        
++        
++        
+     def execute(self):
+ 
+         # symbolTable.read_input() falls back to a plain terminal input()
+@@ -1251,25 +1307,13 @@ class InputStatement(Statement):
+         token_type = 'integer' if raw.lstrip('-').isdigit() else 'string'
+ 
+         var = Object(TokenObj(token_type,raw,0,0,0)).cast()
+-        value = Literal(var.evaluate())
+-
+-        if isinstance(self.target,PropertyExpression):
+-            # Write straight onto the instance's own property table, the
+-            # same way PropertyAssignmentStatement does for a plain
+-            # `obj.jina = ...` - 'nafsi' inside a method is nothing
+-            # special, just a local variable holding the current
+-            # instance, same as everywhere else in the language.
+-            instance = _fetch_instance(self.target.object_name)
+-            if instance is None:
+-                return
+-            symbolTable.table['variables'][instance.scope_key][self.target.property_name] = value
+-        else:
+-            # Same call_flag-based scope check as huku's loop variable (see
+-            # ForStatement.execute()) - symbolTable.get_scope('var-scope') only
+-            # reflects parse-time bookkeeping, which has already unwound by
+-            # the time this runs.
+-            var_scope = 'local' if symbolTable.call_flag else 'global'
+-            symbolTable.write_variable(var_scope,self.target.name,value)
++
++        # Same call_flag-based scope check as huku's loop variable (see
++        # ForStatement.execute()) - symbolTable.get_scope('var-scope') only
++        # reflects parse-time bookkeeping, which has already unwound by
++        # the time this runs.
++        var_scope = 'local' if symbolTable.call_flag else 'global'
++        symbolTable.write_variable(var_scope,self.storage,Literal(var.evaluate()))
+         
+         
+ 

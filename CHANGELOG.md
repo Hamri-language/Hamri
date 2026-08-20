@@ -27,7 +27,7 @@ document the language and confirms it still executes successfully.
   attempted this via a `set_return_value` method that didn't actually
   exist anywhere in `SymbolTable`, so it could never have worked).
 - **Word-form operators** — `ongeza` (+), `punguza` (-), `mara` (*),
-  `gawa` (/), `sawa` (loose `==`), `kabisa`/`hakika` (strict equality,
+  `gawa` (/), `sawa na` (loose `==`), `kabisa`/`hakika` (strict equality,
   checks type *and* value, e.g. `1 kabisa true` is false).
 - **Comments** — `# ...` to end of line, quote-aware (a `#` inside a
   string literal is left alone).
@@ -59,6 +59,19 @@ document the language and confirms it still executes successfully.
   malformed string. Reimplemented from scratch as a proper statement
   (`aina <expr>`, matching `chapa`'s own bare-expression style, rather
   than the original's function-call-style `aina(x)`).
+
+- **Inline conditionals: `<value> kama <condition> sivyo <value>`.**
+  The same `kama`/`sivyo` words used for an if-block now also work
+  inline, as a real conditional expression (like Python's
+  `x if cond else y`) usable anywhere a value is expected - an
+  assignment, a `chapa`, a function argument, and so on, e.g.
+  `hali = "mtu mzima" kama umri inazidi 17 sivyo "kijana"`. Only the
+  branch actually taken is ever evaluated. `sivyo` is required; writing
+  `kama` without a matching `sivyo` right after it falls back to
+  starting an ordinary `kama` block instead, exactly as before - so
+  existing scripts that happen to have a bare `kama` following an
+  expression on the same line are unaffected. Chains left to right for
+  an else-if ladder: `"A" kama x sivyo "B" kama y sivyo "C"`.
 
 ### Bug fixes
 
@@ -117,6 +130,43 @@ document the language and confirms it still executes successfully.
   fall back to a plain `print()` when no console is attached, matching
   how error messages already behaved.
 
+- **`jaza` into a property (e.g. `jaza "jina lako ni?:", nafsi.jina`)
+  crashed with `'PropertyExpression' object has no attribute 'name'`.**
+  `InputStatement` assumed its destination was always a plain variable
+  and read `.name` off it directly at parse time, but `read_operand()`
+  recognizes `obj.member` shapes as a `PropertyExpression` first (the
+  same logic that makes `chapa mtu1.jina` work), and that class has no
+  `.name`. `InputStatement` now keeps the raw destination and, at
+  execute time, writes straight onto the instance's property table for
+  a `PropertyExpression` target (the same way `obj.jina = value` does)
+  or falls back to the original plain-variable path otherwise. This was
+  previously the only way `jaza` could not be used to fill in an
+  object's property directly inside its own constructor.
+
+### Improvements
+
+- **Runtime errors now quote the source line they happened on** -
+  every message is prefixed with `Mstari <n>:`. Previously a statement
+  object never carried forward the line number of the token it started
+  on, so an error deep in a long script gave no clue where to look.
+  `StatementParser.parse()`'s single dispatch loop now stamps every
+  parsed statement with `.line` (the 1-indexed line its first token
+  came from - `TokenObj.line`, from `LexicalParser`, is 0-indexed);
+  every statement-list execution loop (`kwanza`'s own, and every
+  `kama`/`wakati`/`huku`/function-call body) sets
+  `symbolTable.current_line` from it right before that statement
+  actually runs. `Errors._report()` reads that value and prefixes it
+  onto every message, so any error raised while a statement is
+  executing - including one that bubbles up from deep inside a nested
+  expression - is automatically attributed to the right line, with no
+  per-expression-node plumbing needed. Two exceptions handled
+  explicitly: `leta` (`Kosa La Leta`) fails at parse time, before
+  `current_line` would even reflect it, so its own line is passed
+  through directly instead; and a runaway loop (`Kosa La Mzunguko`)
+  quotes the loop's own header line rather than whatever body statement
+  happened to be running when the 100,000-iteration cap hit, since the
+  loop itself is what's actually wrong.
+
 ### Desktop IDE (`Notepad.py`)
 
 - **Added a "Run ▶" button** directly in the window, alongside "Clear
@@ -153,6 +203,19 @@ document the language and confirms it still executes successfully.
   both are untracked and safe to delete whenever convenient; neither
   will get committed by the commands below since they're never `git
   add`-ed.
+
+- **Removed three unused, unimported files**: `Console.py` (a
+  superseded console-output helper - superseded by the plain `print()`
+  fallback described above), `Stack.py` (a generic stack utility never
+  wired into anything), and `Symbols.py` (a second, entirely separate
+  `SymbolTable`/`Scope` implementation that only ever collided
+  confusingly in name with the real, actively-used `SymbolTable.py`).
+  Confirmed via a repo-wide search that none of the three are imported
+  anywhere before removing them.
+- **All `.ham` test scripts moved into a single `tests/` folder**
+  (previously scattered loose in the repo root), so the repository root
+  only contains actual interpreter/IDE source files plus one `tests/`
+  directory holding everything used to exercise them.
 
 ### Other changes
 
@@ -239,33 +302,12 @@ lexer bug the highlighting fix surfaced along the way.
   console pane already has its own fixed black background and isn't
   affected.
 
-## Unreleased
-
-### Bug fixes
-
-- **`jaza` into a property (e.g. `jaza "jina lako ni?:", nafsi.jina`)
-  crashed with `'PropertyExpression' object has no attribute 'name'`.**
-  `InputStatement` assumed its destination was always a plain variable
-  and read `.name` off it directly at parse time, but `read_operand()`
-  recognizes `obj.member` shapes as a `PropertyExpression` first (the
-  same logic that makes `chapa mtu1.jina` work), and that class has no
-  `.name`. `InputStatement` now keeps the raw destination and, at
-  execute time, writes straight onto the instance's property table for
-  a `PropertyExpression` target (the same way `obj.jina = value` does)
-  or falls back to the original plain-variable path otherwise. This was
-  previously the only way `jaza` could not be used to fill in an
-  object's property directly inside its own constructor.
-
-### Breaking changes
-
-- **The loose-equality word operator is now `sawa na`, not `sawa`.**
-  `Tokens.keyword`'s pattern changed from `\bsawa\b` to `\bsawa\s+na\b`,
-  so the lexer now matches both words as a single token (same as any
-  other one-piece word-operator) and `WORD_OPERATORS`'s key changed to
-  match. Existing scripts using the old bare `sawa` need updating to
-  `sawa na` — e.g. `kama umri sawa 20` becomes
-  `kama umri sawa na 20`. `kabisa`/`hakika` (strict equality) are
-  unaffected.
+- **The "Run ▶" button (and its `Cmd+R`/`Ctrl+R` shortcut) now clears
+  the console before running the script**, instead of appending the new
+  run's output underneath whatever was already there. `__execute()`
+  calls `__clearConsole()` as its very first step, so every run starts
+  from a blank console pane - matching how the web Playground's own Run
+  button already behaved.
 
 ## v1.0.2 — initial commit
 
