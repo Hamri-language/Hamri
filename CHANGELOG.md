@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+### Improvements
+
+- **Runtime errors now also quote a column, not just a line** - the
+  `Mstari <n>:` prefix is now `Mstari <n>, Nafasi <m>:` ("Line n,
+  Position m"), where `m` is how many characters into that line the
+  failing statement starts. Threaded through the same way the line
+  number already was: `StatementParser.parse()` stamps a `.column`
+  (from the starting token's `TokenObj.start`, 0-indexed, +1 to match
+  how an editor counts columns from 1) onto every parsed statement
+  alongside `.line`; `symbolTable.current_column` is kept up to date
+  next to `current_line` by every statement-list execution loop;
+  `Errors._report()` reads both and falls back to just the line (no
+  change from before) if only a line is available. The same two
+  special cases as the line-number feature carry over unchanged:
+  `leta` (parse-time) and `mzunguko` (quotes the loop's own header
+  position, not wherever the body last ran).
+
+### Desktop IDE (`Notepad.py`)
+
+- **Added a line-number gutter** down the left edge of the code
+  editor - a `TextLineNumbers` canvas that redraws from Tk's own
+  `dlineinfo()`, so it always lines up with the text beside it
+  regardless of scrolling or resizing, and numbers each logical
+  source line exactly once even if it wraps onto multiple display
+  rows. Matches whichever light/dark editor theme is active.
+- **Added a status bar below the editor showing the text cursor's
+  current line and column** - updated as you type or click around,
+  using the same 1-indexed column convention as a `Mstari <n>, Nafasi
+  <m>:` error message, so the two are easy to cross-reference.
+
 ## v1.0.3 — language feature expansion + interpreter fixes
 
 This is a large update that brings the interpreter up to date with an

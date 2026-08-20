@@ -100,6 +100,13 @@ class SymbolTable:
         # at all never sets this).
         self.current_line = None
 
+        # Same idea as current_line, but the column (1-indexed
+        # character position within that line) the statement started
+        # on - set alongside current_line everywhere it's set, so
+        # Errors.py can quote a precise "line, column" location instead
+        # of just a line.
+        self.current_column = None
+
 
     def new_instance_id(self):
         id_ = self.next_instance_id

@@ -254,22 +254,23 @@ class StatementParser:
 
             # leta has no runtime behaviour of its own (see _parse_module),
             # so a failed import is reported right here, at parse time -
-            # symbolTable.current_line (updated only as statements
-            # *execute*) wouldn't reflect this line, so it's passed
-            # through explicitly instead.
+            # symbolTable.current_line/current_column (updated only as
+            # statements *execute*) wouldn't reflect this location, so
+            # it's passed through explicitly instead.
             leta_line = parse_token.line + 1
+            leta_column = parse_token.start + 1
 
             if after_kutoka is not None and after_kutoka.token_type == 'string':
                 self.token_position = self.token_position + 1  # land on the filename string
                 filename = self.tokens[self.token_position].value
-                self.import_classes(names,filename,leta_line)
+                self.import_classes(names,filename,leta_line,leta_column)
             else:
                 class_name = after_kutoka.value if after_kutoka is not None else None
                 self.token_position = self.token_position + 1  # land on <class-name>
                 self.token_position = self.token_position + 1  # land on 'kutoka'
                 self.token_position = self.token_position + 1  # land on the filename string
                 filename = self.tokens[self.token_position].value
-                self.import_methods(names,class_name,filename,leta_line)
+                self.import_methods(names,class_name,filename,leta_line,leta_column)
 
         elif parse_token.value == 'kwanza':
             Log('case for main block')
@@ -408,26 +409,26 @@ class StatementParser:
 
         return True
 
-    def import_classes(self,names,filename,line=None):
+    def import_classes(self,names,filename,line=None,column=None):
         # 'leta A, B kutoka "faili"' - pulls in one or more whole classes.
         if not self._parse_module(filename):
-            Error.throwException('leta',filename,line)
+            Error.throwException('leta',filename,line,column)
             return
         for name in names:
             if name not in symbolTable.table['classes']:
-                Error.throwException('leta','{} ({})'.format(name,filename),line)
+                Error.throwException('leta','{} ({})'.format(name,filename),line,column)
 
-    def import_methods(self,names,class_name,filename,line=None):
+    def import_methods(self,names,class_name,filename,line=None,column=None):
         # 'leta a, b kutoka ClassName kutoka "faili"' - pulls in one or
         # more specific methods of a class, callable standalone (see
         # SymbolTable.alias_function).
         if not self._parse_module(filename):
-            Error.throwException('leta',filename,line)
+            Error.throwException('leta',filename,line,column)
             return
         for name in names:
             qualified_name = 'darasa-{}-{}'.format(class_name,name)
             if not symbolTable.alias_function(name,qualified_name):
-                Error.throwException('leta','{}.{} ({})'.format(class_name,name,filename),line)
+                Error.throwException('leta','{}.{} ({})'.format(class_name,name,filename),line,column)
 
     def try_parse_special_value(self):
         # Tries each of the "not a plain fetch_express() expression"
@@ -760,10 +761,18 @@ class StatementParser:
             # (error messages) matches what they'd count in an editor.
             start_line = self.tokens[self.token_position].line + 1
 
+            # Same idea as start_line above, but for the column: how many
+            # characters into that line the statement's first token
+            # starts (TokenObj.start, from LexicalParser - also 0-indexed,
+            # so +1 here too, matching how a text editor numbers columns
+            # starting from 1 rather than 0).
+            start_column = self.tokens[self.token_position].start + 1
+
             statement = self.parseStatement(self.tokens[self.token_position])
 
             if statement is not None:
                 statement.line = start_line
+                statement.column = start_column
 
             #print('Function definition flag:',symbolTable.def_flag)
 
@@ -856,6 +865,7 @@ class StatementParser:
                 Log('kwanza','Executing from scope')
                 Log(i,'Executing statement')
                 symbolTable.current_line = i.line
+                symbolTable.current_column = i.column
                 i.execute()
 
             else:
@@ -984,6 +994,7 @@ class FunctionCallStatement(Statement):
             Log(i,'Executing statement')
 
             symbolTable.current_line = i.line
+            symbolTable.current_column = i.column
             i.execute()
 
         # This is the function-call boundary: absorb the return flag here
@@ -1362,6 +1373,7 @@ class IfStatement(Statement):
                 if symbolTable.exit() != 0 or symbolTable.is_returning():
                     break
                 symbolTable.current_line = i.line
+                symbolTable.current_column = i.column
                 i.execute()
         elif self.else_name is not None:
             Log('condition false, executing sivyo-block {}'.format(self.else_name),'If Execution')
@@ -1369,6 +1381,7 @@ class IfStatement(Statement):
                 if symbolTable.exit() != 0 or symbolTable.is_returning():
                     break
                 symbolTable.current_line = i.line
+                symbolTable.current_column = i.column
                 i.execute()
         else:
             Log('condition false, no sivyo branch, skipping','If Execution')
@@ -1392,16 +1405,18 @@ class WhileStatement(Statement):
                 break
             iterations = iterations + 1
             if iterations > self.MAX_ITERATIONS:
-                # self.line (not symbolTable.current_line, which by now
-                # would just hold whatever body statement last ran) -
-                # the loop's own header line is more useful here than
-                # wherever execution happened to be when it gave up.
-                Error.throwException('mzunguko',self.name,self.line)
+                # self.line/self.column (not symbolTable.current_line/
+                # current_column, which by now would just hold wherever
+                # the body statement last ran) - the loop's own header
+                # position is more useful here than wherever execution
+                # happened to be when it gave up.
+                Error.throwException('mzunguko',self.name,self.line,self.column)
                 break
             for i in symbolTable.table['functions'][self.name]:
                 if symbolTable.exit() != 0 or symbolTable.is_returning():
                     break
                 symbolTable.current_line = i.line
+                symbolTable.current_column = i.column
                 i.execute()
             if symbolTable.is_returning():
                 break
@@ -1444,11 +1459,12 @@ class ForStatement(Statement):
                 break
             iterations = iterations + 1
             if iterations > self.MAX_ITERATIONS:
-                # self.line (not symbolTable.current_line, which by now
-                # would just hold whatever body statement last ran) -
-                # the loop's own header line is more useful here than
-                # wherever execution happened to be when it gave up.
-                Error.throwException('mzunguko',self.name,self.line)
+                # self.line/self.column (not symbolTable.current_line/
+                # current_column, which by now would just hold wherever
+                # the body statement last ran) - the loop's own header
+                # position is more useful here than wherever execution
+                # happened to be when it gave up.
+                Error.throwException('mzunguko',self.name,self.line,self.column)
                 break
 
             # Same storage path as a normal assignment (Var mode 1) -
@@ -1464,6 +1480,7 @@ class ForStatement(Statement):
                 if symbolTable.exit() != 0 or symbolTable.is_returning():
                     break
                 symbolTable.current_line = i.line
+                symbolTable.current_column = i.column
                 i.execute()
 
             if symbolTable.is_returning():
@@ -1503,6 +1520,7 @@ class ForEachStatement(Statement):
                 if symbolTable.exit() != 0 or symbolTable.is_returning():
                     break
                 symbolTable.current_line = i.line
+                symbolTable.current_column = i.column
                 i.execute()
 
             if symbolTable.is_returning():

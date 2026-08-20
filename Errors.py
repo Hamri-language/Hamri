@@ -10,23 +10,33 @@
 # symbol table to stop the script via symbolTable.exit(1).
 from SymbolTable import symbolTable
 
-def _report(message,line=None):
+def _report(message,line=None,column=None):
     # Route error text through whatever console the current run is using
     # (Tk Text widget, the web IDE's console shim, ...) so it's actually
     # visible there, same as chapa output. Falls back to print() for the
     # plain CLI (main.py), which never sets a console.
     #
-    # Prefixes the source line whenever one's available - either passed
-    # explicitly (see Errors.throwException's 'line' argument, used for
-    # 'leta', which fails at parse time rather than execute time) or,
-    # for every other error, symbolTable.current_line - kept up to date
-    # by every statement-list execution loop (StatementParser.parse()'s
-    # own, and every kama/wakati/huku/function-call body) right before
-    # each statement actually runs. Falls back to no prefix at all only
-    # if neither is set (e.g. an error somehow raised before any
-    # statement has started executing).
+    # Prefixes the source line (and, when available, the column within
+    # that line) - either passed explicitly (see Errors.throwException's
+    # 'line'/'column' arguments, used for 'leta', which fails at parse
+    # time rather than execute time, and for 'mzunguko', which quotes
+    # the loop's own header rather than wherever the body last ran) or,
+    # for every other error, symbolTable.current_line/current_column -
+    # kept up to date by every statement-list execution loop
+    # (StatementParser.parse()'s own, and every kama/wakati/huku/
+    # function-call body) right before each statement actually runs.
+    # Falls back to no prefix at all only if neither line nor column is
+    # set (e.g. an error somehow raised before any statement has started
+    # executing); falls back to just the line, with no column, if only
+    # the line is known.
     resolved_line = line if line is not None else symbolTable.current_line
-    prefix = 'Mstari {}: '.format(resolved_line) if resolved_line is not None else ''
+    resolved_column = column if column is not None else symbolTable.current_column
+    if resolved_line is not None and resolved_column is not None:
+        prefix = 'Mstari {}, Nafasi {}: '.format(resolved_line,resolved_column)
+    elif resolved_line is not None:
+        prefix = 'Mstari {}: '.format(resolved_line)
+    else:
+        prefix = ''
     full_message = '{}{}'.format(prefix,message)
 
     if symbolTable.console is not None:
@@ -59,35 +69,37 @@ class Errors:
 
         }
 
-    def throwException(self,arg,args='',line=None):
+    def throwException(self,arg,args='',line=None,column=None):
         # Looks up the exception class for `arg` (e.g. 'anwani'),
-        # constructs one with the extra details (`args`, `line`), and
-        # immediately runs it. `self.exceptions[arg](args,line)` reads
-        # as: fetch the class, then call it like a function to build an
-        # instance - `.execute()` right after that is what actually
-        # prints the message and stops the script.
-        self.exceptions[arg](args,line).execute()
+        # constructs one with the extra details (`args`, `line`,
+        # `column`), and immediately runs it. `self.exceptions[arg](args,
+        # line,column)` reads as: fetch the class, then call it like a
+        # function to build an instance - `.execute()` right after that
+        # is what actually prints the message and stops the script.
+        self.exceptions[arg](args,line,column).execute()
 
 class VariableReferenceException:
 
-    def __init__(self,arg,line=None):
+    def __init__(self,arg,line=None,column=None):
         self.name = arg
         self.line = line
+        self.column = column
 
     def execute(self):
-        _report('Kosa La Anwani: Jina hili {' +self.name +'} halijulikani',self.line)
+        _report('Kosa La Anwani: Jina hili {' +self.name +'} halijulikani',self.line,self.column)
         symbolTable.exit(1)
 
 
 class FunctionReferenceException:
     # 'kazi' = Swahili for "job/task" - used here for "function".
 
-    def __init__(self,arg,line=None):
+    def __init__(self,arg,line=None,column=None):
         self.name = arg
         self.line = line
+        self.column = column
 
     def execute(self):
-        _report('Kosa La Kazi: Kazi hii {' +self.name +'} haijaelezwa (undefined function)',self.line)
+        _report('Kosa La Kazi: Kazi hii {' +self.name +'} haijaelezwa (undefined function)',self.line,self.column)
         symbolTable.exit(1)
 
 
@@ -96,12 +108,13 @@ class LoopLimitException:
     # became false ran too many iterations and was stopped, rather than
     # freezing the page forever.
 
-    def __init__(self,arg,line=None):
+    def __init__(self,arg,line=None,column=None):
         self.name = arg
         self.line = line
+        self.column = column
 
     def execute(self):
-        _report('Kosa La Mzunguko: mzunguko {} haujaisha (loop did not end - check your condition)'.format(self.name),self.line)
+        _report('Kosa La Mzunguko: mzunguko {} haujaisha (loop did not end - check your condition)'.format(self.name),self.line,self.column)
         symbolTable.exit(1)
 
 
@@ -109,12 +122,13 @@ class IndexOutOfRangeException:
     # 'fahirisi' = Swahili for "index" - reading or writing a list
     # position that doesn't exist (negative, or past the end).
 
-    def __init__(self,arg,line=None):
+    def __init__(self,arg,line=None,column=None):
         self.name = arg
         self.line = line
+        self.column = column
 
     def execute(self):
-        _report('Kosa La Fahirisi: fahirisi hii katika {' +self.name +'} haipo (index out of range)',self.line)
+        _report('Kosa La Fahirisi: fahirisi hii katika {' +self.name +'} haipo (index out of range)',self.line,self.column)
         symbolTable.exit(1)
 
 
@@ -122,12 +136,13 @@ class NotAListException:
     # 'orodha' = Swahili for "list" - trying to index/append/loop over a
     # variable that isn't actually holding a list.
 
-    def __init__(self,arg,line=None):
+    def __init__(self,arg,line=None,column=None):
         self.name = arg
         self.line = line
+        self.column = column
 
     def execute(self):
-        _report('Kosa La Orodha: {' +self.name +'} si orodha (not a list)',self.line)
+        _report('Kosa La Orodha: {' +self.name +'} si orodha (not a list)',self.line,self.column)
         symbolTable.exit(1)
 
 
@@ -136,12 +151,13 @@ class NotAnObjectException:
     # call a method on a variable that isn't actually holding an object
     # (an instance of some darasa).
 
-    def __init__(self,arg,line=None):
+    def __init__(self,arg,line=None,column=None):
         self.name = arg
         self.line = line
+        self.column = column
 
     def execute(self):
-        _report('Kosa La Darasa: {' +self.name +'} si kitu (not an object)',self.line)
+        _report('Kosa La Darasa: {' +self.name +'} si kitu (not an object)',self.line,self.column)
         symbolTable.exit(1)
 
 
@@ -158,12 +174,13 @@ class ImportException:
     # wouldn't reflect it. StatementParser passes the leta statement's
     # own line explicitly instead - see throwException's 'line' argument.
 
-    def __init__(self,arg,line=None):
+    def __init__(self,arg,line=None,column=None):
         self.name = arg
         self.line = line
+        self.column = column
 
     def execute(self):
-        _report('Kosa La Leta: {' +self.name +'} haipatikani (import failed - check the file name, class name, or method name)',self.line)
+        _report('Kosa La Leta: {' +self.name +'} haipatikani (import failed - check the file name, class name, or method name)',self.line,self.column)
         symbolTable.exit(1)
 
 

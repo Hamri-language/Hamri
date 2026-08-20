@@ -47,7 +47,104 @@ class CustomText(Text):
         if command in ("insert", "delete", "replace"):
             self.event_generate("<<TextModified>>")
 
+        # Every way the visible portion of this widget can change funnels
+        # through here too, not just edits - "yview" is exactly what
+        # scrolling (mouse wheel, Page Up/Down, dragging a scrollbar, an
+        # arrow key that pushes the cursor past the visible area, ...)
+        # actually calls under the hood, since it's the same underlying
+        # Tcl widget command we renamed and took over above. The line-
+        # number gutter needs to redraw on any of these - an edit can add
+        # or remove lines just as much as a scroll can bring new ones
+        # into view - so it listens for this broader event instead of
+        # <<TextModified>>, which stays scoped to "the text itself
+        # changed" for syntax highlighting's sake (re-tokenizing on every
+        # scroll tick would be wasted work, and visibly slower on a long
+        # script).
+        if command in ("insert", "delete", "replace", "yview"):
+            self.event_generate("<<TextViewChanged>>")
+
         return result
+
+
+class TextLineNumbers(tk.Canvas):
+    """A narrow strip drawn alongside a Text widget, showing a line
+    number next to every visible line - the familiar "gutter" down the
+    left edge of most code editors.
+
+    A Canvas (rather than e.g. a second read-only Text widget) is the
+    standard, lightweight way to do this in Tkinter: it draws only
+    plain numbers, and Tk's own dlineinfo() (see redraw() below) already
+    knows the exact pixel position of every currently-visible line, so
+    the numbers always land in the right place without this class
+    having to guess a fixed line height itself.
+    """
+
+    def __init__(self, master, **kwargs):
+        super().__init__(master, highlightthickness=0, **kwargs)
+        # Set via attach() right after construction, once the real code
+        # editor Text widget it belongs to actually exists - kept as a
+        # plain instance attribute rather than a constructor argument so
+        # this class doesn't need to know Notepad's widget-creation order.
+        self.text_widget = None
+        # Overwritten by set_colors() below to match whichever editor
+        # theme (light/dark) is active - this is just a safe fallback so
+        # redraw() has *some* color even if set_colors() is never called.
+        self._text_color = 'black'
+
+    def attach(self, text_widget):
+        """Point this gutter at the Text widget it should number."""
+        self.text_widget = text_widget
+
+    def set_colors(self, background, text_color):
+        """Match the gutter's background/number color to the editor's
+        current theme (see Notepad.__applyEditorTheme)."""
+        self._text_color = text_color
+        self.configure(bg=background)
+
+    def redraw(self, *_event_args):
+        """Erase and redraw every line number currently visible.
+
+        *_event_args soaks up whatever Tkinter passes in when this is
+        used directly as an event callback (an Event object) - redraw()
+        never needs to look at it, it just always recomputes from
+        scratch based on the text widget's current scroll position.
+        """
+        self.delete("all")
+
+        if self.text_widget is None:
+            return
+
+        # "@0,0" asks the text widget "what character index is showing
+        # at pixel position (0,0)?" - i.e. wherever the very first
+        # visible line is right now, however far the user has scrolled.
+        index = self.text_widget.index("@0,0")
+
+        while True:
+            # dlineinfo() returns None once `index` scrolls past the
+            # last actually-visible display line (e.g. below the bottom
+            # of the window) - the natural place for this loop to stop.
+            dline_info = self.text_widget.dlineinfo(index)
+            if dline_info is None:
+                break
+
+            # dlineinfo()'s 2nd element is the line's top-left y pixel
+            # position within the text widget - exactly where this
+            # number needs to be drawn to line up with it.
+            y_position = dline_info[1]
+            line_number = str(index).split('.')[0]
+            self.create_text(
+                2, y_position,
+                anchor='nw',
+                text=line_number,
+                font=self.text_widget['font'],
+                fill=self._text_color,
+            )
+
+            # Advance by one logical source line - not one *display*
+            # line - so a long line that wraps onto several display rows
+            # still only gets numbered once, at the top, the same way
+            # every other code editor's gutter behaves.
+            index = self.text_widget.index('{}+1line'.format(index))
 
 
 class Notepad:
@@ -75,10 +172,6 @@ class Notepad:
         self.__thisCodeFrame = ttk.Frame(self.__root)
         self.__thisCodeFrame.pack(fill='both', expand=1)
 
-        # Create the text area for code editing
-        self.__thisTextArea = CustomText(self.__thisCodeFrame, font=("Courier", 12, "normal"))
-        self.__thisTextArea.pack(side=TOP, fill='both', expand=1)
-
         # A visible in-window toolbar with a Run button - on macOS the Menu
         # bar below is drawn in the system menu bar at the top of the
         # screen (not inside the window itself), and a Tk app launched
@@ -95,6 +188,35 @@ class Notepad:
         self.__thisClearConsoleButton.pack(side=LEFT, padx=4, pady=4)
         self.__thisThemeButton = ttk.Button(self.__thisToolbar, text="Dark Mode", command=self.__toggleEditorTheme)
         self.__thisThemeButton.pack(side=LEFT, padx=4, pady=4)
+
+        # The code editor itself, plus its line-number gutter, side by
+        # side in their own frame - keeping them together like this
+        # means the status bar and console below can be packed against
+        # the codeFrame without needing to know anything about the
+        # gutter living next to the text area.
+        self.__thisEditorFrame = ttk.Frame(self.__thisCodeFrame)
+        self.__thisEditorFrame.pack(side=TOP, fill='both', expand=1)
+
+        # Create the text area for code editing
+        self.__thisTextArea = CustomText(self.__thisEditorFrame, font=("Courier", 12, "normal"))
+
+        # The gutter needs to exist before it can be told which text
+        # widget to number (attach(), right after), and packed to the
+        # left of it so the numbers appear on the left edge of the
+        # editor, matching the convention every other code editor uses.
+        self.__thisLineNumbers = TextLineNumbers(self.__thisEditorFrame, width=40)
+        self.__thisLineNumbers.attach(self.__thisTextArea)
+        self.__thisLineNumbers.pack(side=LEFT, fill='y')
+
+        self.__thisTextArea.pack(side=LEFT, fill='both', expand=1)
+
+        # A thin status bar just below the editor, showing where the
+        # text cursor currently is - updated by __updateCursorPosition,
+        # bound further below.
+        self.__thisStatusBar = ttk.Frame(self.__thisCodeFrame)
+        self.__thisStatusBar.pack(side=TOP, fill='x')
+        self.__thisPositionLabel = ttk.Label(self.__thisStatusBar, text="Line 1, Col 1", anchor='w')
+        self.__thisPositionLabel.pack(side=LEFT, padx=6, pady=2)
 
         # Create the console for displaying output
         self.__thisConsole = CustomText(self.__thisCodeFrame, font=("Courier", 12, "normal"), height=18, bg="black", fg="white")
@@ -139,14 +261,36 @@ class Notepad:
         self.__thisHelpMenu.add_command(label="Open Hamri Documentation", command=self.__openDocumentation)
         self.__thisMenuBar.add_cascade(label="Help", menu=self.__thisHelpMenu)
 
-        # Bind events to the text area
+        # Bind events to the text area. add='+' on every binding past the
+        # first one for the same event is required here - Tkinter's
+        # .bind() *replaces* any existing callback for a given sequence
+        # on a widget by default, so without it each of these would
+        # silently discard whatever was bound right before it instead of
+        # running alongside it.
         self.__thisTextArea.bind("<<TextModified>>", self.__generateTags)
+        # The gutter redraws on <<TextViewChanged>> (see CustomText._proxy)
+        # rather than <<TextModified>> - it needs to catch scrolling too,
+        # not just edits, which <<TextModified>> deliberately doesn't cover.
+        self.__thisTextArea.bind("<<TextViewChanged>>", self.__thisLineNumbers.redraw, add='+')
+        self.__thisTextArea.bind("<KeyRelease>", self.__updateCursorPosition, add='+')
+        self.__thisTextArea.bind("<ButtonRelease-1>", self.__updateCursorPosition, add='+')
+        # Catches the editor being resized (e.g. the whole window being
+        # resized) - dlineinfo()'s pixel positions shift when that
+        # happens, even without any scrolling or editing taking place.
+        self.__thisLineNumbers.bind("<Configure>", self.__thisLineNumbers.redraw)
 
         # Keyboard shortcut for running the script (Cmd+R on macOS,
         # Ctrl+R elsewhere) as a second fallback alongside the Run button,
         # independent of the File menu / menu bar entirely.
         self.__root.bind_all("<Command-r>", lambda event: self.__execute())
         self.__root.bind_all("<Control-r>", lambda event: self.__execute())
+
+        # Give the gutter and status bar their correct starting
+        # appearance/content immediately, rather than waiting for the
+        # first keystroke or click to trigger it via the bindings above.
+        self.__thisLineNumbers.set_colors('#f0f0f0', '#666666')
+        self.__thisLineNumbers.redraw()
+        self.__updateCursorPosition()
 
     # Maps each of the lexer's actual token type strings (see the `Tokens`
     # enum in LexicalParser.py - 'keyword', 'variable', 'operator',
@@ -318,6 +462,19 @@ class Notepad:
         # a number), so treat that the same as an empty response.
         return result if result is not None else ""
 
+    def __updateCursorPosition(self, event=None):
+        """Refresh the status bar with the text cursor's current line
+        and column, e.g. after the user types or clicks somewhere new.
+
+        Text widget indices come back as a "line.column" string, with
+        the line already 1-indexed the way an editor shows it - but the
+        column half is 0-indexed, so it needs its own +1 here to match
+        (and to match the 1-indexed "Nafasi" position Errors.py quotes
+        in a runtime error message, for the same underlying reason).
+        """
+        line, column = self.__thisTextArea.index(INSERT).split(".")
+        self.__thisPositionLabel.config(text="Line {}, Col {}".format(line, int(column) + 1))
+
     def __clearEditor(self):
         """Clear all text out of the code editor"""
         self.__thisTextArea.delete("1.0", "end")
@@ -329,16 +486,21 @@ class Notepad:
     def __applyEditorTheme(self, dark):
         """Switch the code editor's background between light and dark.
 
-        Scoped to the editor only - the console already has its own
-        fixed black/white look (see __init__) and isn't affected here.
+        Scoped to the editor (and its line-number gutter) only - the
+        console already has its own fixed black/white look (see
+        __init__) and isn't affected here.
         """
         self.__editorDarkMode = dark
         if dark:
             bg, fg, insertbg, selectbg = '#1e1e1e', '#f1f1f1', '#f1f1f1', '#3d5a73'
+            gutter_bg, gutter_fg = '#1e1e1e', '#6e7681'
         else:
             bg, fg, insertbg, selectbg = '#ffffff', '#000000', '#000000', '#c3d9ff'
+            gutter_bg, gutter_fg = '#f0f0f0', '#666666'
         self.__thisTextArea.config(bg=bg, fg=fg, insertbackground=insertbg, selectbackground=selectbg)
         self.__thisThemeButton.config(text="Light Mode" if dark else "Dark Mode")
+        self.__thisLineNumbers.set_colors(gutter_bg, gutter_fg)
+        self.__thisLineNumbers.redraw()
 
         # Re-apply syntax highlighting immediately with the new theme's
         # colors (see _TOKEN_COLORS) rather than waiting for the next
