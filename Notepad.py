@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import *
 from tkinter.messagebox import *
 from tkinter.filedialog import *
+from tkinter.simpledialog import askstring
 import webbrowser
 from tkinter import ttk
 import os
@@ -129,37 +130,63 @@ class Notepad:
         self.__root.bind_all("<Command-r>", lambda event: self.__execute())
         self.__root.bind_all("<Control-r>", lambda event: self.__execute())
 
+    # Maps each of the lexer's actual token type strings (see the `Tokens`
+    # enum in LexicalParser.py - 'keyword', 'variable', 'operator',
+    # 'divider', 'boolean', 'integer', 'string') to one of the four
+    # highlight tags below. Previously this compared against
+    # "Keyword"/"Identifier"/"Operator"/"Literal" - capitalized names that
+    # don't match any of the lexer's real (lowercase) token types at all,
+    # so no token was ever colored. 'divider' (brackets/parens/dot) is
+    # deliberately left unmapped - punctuation, not worth its own color.
+    _TOKEN_TAGS = {
+        'keyword': 'Token.Keyword',
+        'variable': 'Token.Identifier',
+        'operator': 'Token.Operator',
+        'boolean': 'Token.Literal',
+        'integer': 'Token.Literal',
+        'string': 'Token.Literal',
+    }
+
     def __generateTags(self, event=None):
         """Generates tags for syntax highlighting"""
-        # Clear existing tags
-        self.__thisTextArea.tag_delete("Token.Keyword")
-        self.__thisTextArea.tag_delete("Token.Identifier")
-        self.__thisTextArea.tag_delete("Token.Operator")
-        self.__thisTextArea.tag_delete("Token.Literal")
+        # Remove previous highlighting (tag_remove clears the ranges but
+        # keeps the tag's style configured below, rather than deleting
+        # and recreating the tag on every keystroke).
+        for tag in ("Token.Keyword", "Token.Identifier", "Token.Operator", "Token.Literal"):
+            self.__thisTextArea.tag_remove(tag, "1.0", "end")
+
+        self.__thisTextArea.tag_configure("Token.Keyword", foreground="blue", font=("Courier", 12, "bold"))
+        self.__thisTextArea.tag_configure("Token.Identifier", foreground="black", font=("Courier", 12, "normal"))
+        self.__thisTextArea.tag_configure("Token.Operator", foreground="green", font=("Courier", 12, "normal"))
+        self.__thisTextArea.tag_configure("Token.Literal", foreground="purple", font=("Courier", 12, "normal"))
 
         # Parse code and generate tokens. from_text=True is required here -
         # without it, LexicalParser treats its argument as a *file path* by
         # default (see main.py) rather than literal source text, which
         # would raise on every keystroke since this text isn't a real file.
         code = self.__thisTextArea.get("1.0", "end-1c")
-        lexer = LexicalParser(code, from_text=True).parse()
+        try:
+            lexer = LexicalParser(code, from_text=True).parse()
+        except Exception:
+            # Mid-edit source (e.g. an unterminated string) shouldn't be
+            # able to raise out of a text-modified event handler - just
+            # skip highlighting for this keystroke and try again on the
+            # next one.
+            return
         self.__Tokens = lexer.token_list
-        
 
-        # Configure tags for different token types
         for token in self.__Tokens:
-            if token.type == "Keyword":
-                self.__thisTextArea.tag_add("Token.Keyword", token.start, token.end)
-                self.__thisTextArea.tag_configure("Token.Keyword", foreground="blue", font=("Courier", 12, "bold"))
-            elif token.type == "Identifier":
-                self.__thisTextArea.tag_add("Token.Identifier", token.start, token.end)
-                self.__thisTextArea.tag_configure("Token.Identifier", foreground="black", font=("Courier", 12, "normal"))
-            elif token.type == "Operator":
-                self.__thisTextArea.tag_add("Token.Operator", token.start, token.end)
-                self.__thisTextArea.tag_configure("Token.Operator", foreground="green", font=("Courier", 12, "normal"))
-            elif token.type == "Literal":
-                self.__thisTextArea.tag_add("Token.Literal", token.start, token.end)
-                self.__thisTextArea.tag_configure("Token.Literal", foreground="purple", font=("Courier", 12, "normal"))
+            tag = self._TOKEN_TAGS.get(token.token_type)
+            if tag is None:
+                continue
+            # Tkinter Text indices are "line.column" strings, with lines
+            # 1-indexed - token.line/token.start are plain 0-indexed
+            # character offsets within the source (see TokenObj in
+            # LexicalParser.py), which is a different scheme entirely and
+            # can't be passed to tag_add() directly.
+            start_index = "{}.{}".format(token.line + 1, token.start)
+            end_index = "{}.{}".format(token.line + 1, token.start + token.size())
+            self.__thisTextArea.tag_add(tag, start_index, end_index)
 
     def __newFile(self):
         """Create a new file"""
@@ -213,8 +240,11 @@ class Notepad:
 
         # Reset the interpreter's global state before each run, so a
         # previous Execute click's variables/classes/functions don't leak
-        # into this one.
+        # into this one. reset() rebuilds SymbolTable via __init__, which
+        # sets input_handler back to None - so it has to be (re)assigned
+        # after reset(), not before.
         symbolTable.reset()
+        symbolTable.input_handler = self.__askForInput
 
         # Perform lexical analysis (from_text=True - see __generateTags)
         lexer = LexicalParser(code, from_text=True).parse()
@@ -228,6 +258,21 @@ class Notepad:
 
         # Execute the parsed statements
         result = statements.execute()
+
+    def __askForInput(self, prompt):
+        """GUI counterpart of jaza's terminal input() fallback.
+
+        Wired in as symbolTable.input_handler (see __execute above) so a
+        script's 'jaza' statement pops up an actual dialog box in this
+        window instead of silently blocking on whatever terminal
+        Notepad.py happened to be launched from - which is easy to miss
+        entirely if the window doesn't obviously look "stuck".
+        """
+        result = askstring("Hamri - Input", prompt, parent=self.__root)
+        # A cancelled/closed dialog returns None - jaza still needs a
+        # string back (it decides for itself whether the text looks like
+        # a number), so treat that the same as an empty response.
+        return result if result is not None else ""
 
     def __clearEditor(self):
         """Clear all text out of the code editor"""

@@ -36,7 +36,7 @@ kwisha
 
 kwanza
 
-    hamri_v = "Hamri v1.02"
+    hamri_v = "Hamri v1.0.3"
 
     sayHi(hamri_v)
 

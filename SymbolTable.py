@@ -66,6 +66,16 @@ class SymbolTable:
         # resolve module names however makes sense there instead.
         self.module_loader = None
 
+        # Pluggable hook used by 'jaza' (input) to actually collect a
+        # value from whoever's running the script - a callable taking the
+        # prompt text and returning the typed string. Left as None, so a
+        # plain script (e.g. via main.py) falls back to a normal
+        # terminal input() prompt. A host with its own UI (e.g. the
+        # desktop Notepad) can override this to pop up a proper dialog
+        # instead of silently expecting input on whatever terminal
+        # happened to launch it.
+        self.input_handler = None
+
         # Set by 'rudisha' (return) so every enclosing block loop (kama,
         # wakati, huku) knows to stop running further statements and
         # unwind, all the way up to the function-call boundary - the one
@@ -103,6 +113,14 @@ class SymbolTable:
                 return f.read()
         except (IOError,OSError):
             return None
+
+    def read_input(self,prompt):
+        # Used by 'jaza' to actually collect a value - see input_handler
+        # above. Falls back to a plain terminal input() prompt so a
+        # script run from disk (main.py) behaves exactly as before.
+        if self.input_handler is not None:
+            return self.input_handler(prompt)
+        return input(prompt)
 
     def alias_function(self,new_name,original_name):
         # Backs 'leta's selective method import ('leta salamu kutoka Mtu

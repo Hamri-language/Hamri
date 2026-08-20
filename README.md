@@ -146,9 +146,11 @@ kwisha
 
 ## Input: `jaza`
 
-`jaza` asks the user for input at the terminal and stores the result in
-a variable. Separate the prompt text and the variable name with a
-comma.
+`jaza` asks the user for input and stores the result in a variable.
+Separate the prompt text and the variable name with a comma. When run
+via `main.py` (console mode), the prompt appears as a normal terminal
+input; when run through the desktop Notepad IDE, it pops up a dialog
+box in the GUI itself instead.
 
 ```
 kwanza
@@ -160,11 +162,7 @@ kwisha
 > If the typed input is a plain whole number (e.g. `25`, or a negative
 > like `-3`), it's automatically stored as a number so it can be used
 > directly in comparisons and arithmetic. Anything else — including a
-> decimal like `3.5` — is stored as text. `jaza` always reads from the
-> terminal via a standard input prompt, even when running through the
-> desktop Notepad IDE — it doesn't currently pop up its own input
-> dialog there, so keep an eye on the terminal you launched
-> `Notepad.py` from if a script uses it.
+> decimal like `3.5` — is stored as text.
 
 ## Conditionals: `kama`
 
@@ -598,8 +596,6 @@ yet:
 | No inheritance or static/shared class variables | A `darasa` can't extend another class, and there's no way to share a variable across every instance of a class — only per-instance properties set via `nafsi`. |
 | No bare property declarations in a class body | A `darasa` block may only contain `eleza` method definitions — properties only come into existence once a method (typically the `jenga` constructor) assigns them with `nafsi.property = value`. |
 | No renaming or scoping on `leta` | An imported class/method always keeps its original name, and becomes available everywhere in the file once imported. |
-| `jaza` always reads from the terminal | Even when running a script through the desktop Notepad IDE, `jaza` prompts on the terminal `Notepad.py` was launched from, not in the GUI window itself. |
-| Notepad.py syntax highlighting | The desktop IDE's live syntax highlighting (`__generateTags`) is a pre-existing rough edge that doesn't currently color tokens correctly; script execution (Run/Execute) is unaffected. |
 
 ## Full example
 
