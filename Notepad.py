@@ -129,8 +129,8 @@ class Notepad:
         # on macOS this menu bar renders in the system menu bar, not the
         # window itself, and isn't always reliably reachable.
         self.__thisViewMenu = Menu(self.__thisMenuBar, tearoff=0)
-        self.__thisViewMenu.add_command(label="Light Editor Background", command=lambda: self.__applyEditorTheme(False))
-        self.__thisViewMenu.add_command(label="Dark Editor Background", command=lambda: self.__applyEditorTheme(True))
+        self.__thisViewMenu.add_command(label="Dark Mode", command=lambda: self.__applyEditorTheme(True))
+        self.__thisViewMenu.add_command(label="Light Mode", command=lambda: self.__applyEditorTheme(False))
         self.__thisMenuBar.add_cascade(label="View", menu=self.__thisViewMenu)
 
         # Create the Help menu
