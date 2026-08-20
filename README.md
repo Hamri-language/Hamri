@@ -28,7 +28,11 @@ this repo, no external dependencies beyond the Python standard library
    Write or open a script in the text area, then use the "Run ▶" button
    (or `Cmd+R` / `Ctrl+R`, or File > Execute) to run it — output appears
    in the console pane below. "Clear Editor" and "Clear Console" (also
-   in the File menu) reset either pane.
+   in the File menu) reset either pane. A line-number gutter runs down
+   the left edge of the editor, and a status bar just below it shows
+   the text cursor's current line and column — handy for matching up
+   an error message's `Mstari <n>, Nafasi <m>:` prefix with the exact
+   spot in your script.
 
    Tkinter isn't part of the Python standard install on every platform.
    If `python3 Notepad.py` fails with `ModuleNotFoundError: No module
@@ -603,16 +607,18 @@ kwisha
 
 Hamri reports runtime errors in Swahili and stops the script (exit code
 1) rather than continuing silently. Every message is prefixed with
-`Mstari <n>:` ("Line n") — the source line the failing statement
-started on — so you don't have to guess which part of a long script
-actually went wrong:
+`Mstari <n>, Nafasi <m>:` ("Line n, Position m") — the source line the
+failing statement started on, and how many characters into that line
+it starts — so you don't have to guess which part of a long script (or
+which of several statements crammed onto one line) actually went
+wrong:
 
 ```
-Mstari 4: Kosa La Anwani: Jina hili {umri} halijulikani
+Mstari 4, Nafasi 5: Kosa La Anwani: Jina hili {umri} halijulikani
 ```
 
-The quoted line is always the *statement* that was running when the
-error happened — the `chapa`/`kama`/`wakati`/function-call line itself,
+The quoted position is always the *statement* that was running when
+the error happened — the `chapa`/`kama`/`wakati`/function-call itself,
 not some internal detail of how the expression inside it was built.
 That's true even when the failure comes from deep inside a nested
 expression (e.g. an undefined property read as part of a larger
@@ -620,10 +626,10 @@ expression (e.g. an undefined property read as part of a larger
 that couldn't find its file (reported at parse time, before the script
 even starts running, since `leta` has no runtime step of its own). A
 runaway `wakati`/`huku` loop (`Kosa La Mzunguko`) is the one exception
-worth calling out — it quotes the loop's own header line, not whatever
-body statement happened to be running on the iteration that tripped
-the 100,000-iteration cap, since the loop itself (not that particular
-statement) is what's actually wrong.
+worth calling out — it quotes the loop's own header position, not
+whatever body statement happened to be running on the iteration that
+tripped the 100,000-iteration cap, since the loop itself (not that
+particular statement) is what's actually wrong.
 
 | Message | Cause |
 |---|---|
