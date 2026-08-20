@@ -194,6 +194,40 @@ kwisha
 `kama` blocks can be nested inside functions, inside loops, and inside
 each other.
 
+## Inline conditionals: `kama ... sivyo`
+
+The same `kama`/`sivyo` words also work inline, as a value rather than
+a whole block — pick one of two values based on a condition, right
+inside an assignment, a `chapa`, or anywhere else a value is expected.
+It reads left to right: `<value if true> kama <condition> sivyo <value
+if false>`.
+
+```
+kwanza
+    umri = 20
+    hali = "mtu mzima" kama umri inazidi 17 sivyo "kijana"
+    chapa hali
+kwisha
+```
+
+Only the branch actually picked is ever evaluated, so it's safe to
+reach for something that would otherwise error out (like an unset
+property) on the branch that never runs. `sivyo` is required — unlike
+the block form, there's no "no-op if false" version of this. Chain
+several together for an else-if ladder:
+
+```
+kwanza
+    alama = 72
+    daraja = "A" kama alama inazidi 89 sivyo "B" kama alama inazidi 79 sivyo "C"
+    chapa daraja
+kwisha
+```
+
+> Writing `kama` without a matching `sivyo` right after it isn't
+> treated as an inline conditional at all — it falls back to starting
+> a brand new `kama` block instead, same as if it were on its own line.
+
 ## Loops: `wakati`
 
 `wakati` ("while") repeats its block for as long as the condition stays

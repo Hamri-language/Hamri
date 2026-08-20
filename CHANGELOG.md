@@ -2,19 +2,20 @@
 
 ## Unreleased
 
-### Desktop IDE (`Notepad.py`)
+### New language features
 
-- **Added a light/dark background toggle for the code editor.** A new
-  "Dark Mode" toolbar button (mirrored by a new View menu, for the same
-  reason the Run/Clear buttons exist alongside the File menu - on macOS
-  this app's menu bar isn't always reliably reachable) switches the
-  editor between its original light background and a dark one. Syntax
-  highlighting colors switch with it - `Token.Identifier` was previously
-  hardcoded to plain black, which would have been invisible against a
-  dark background, so it (and every other token color) now comes from a
-  small per-theme color table instead. Scoped to the editor only - the
-  console pane already has its own fixed black background and isn't
-  affected.
+- **Inline conditionals: `<value> kama <condition> sivyo <value>`.**
+  The same `kama`/`sivyo` words used for an if-block now also work
+  inline, as a real conditional expression (like Python's
+  `x if cond else y`) usable anywhere a value is expected - an
+  assignment, a `chapa`, a function argument, and so on, e.g.
+  `hali = "mtu mzima" kama umri inazidi 17 sivyo "kijana"`. Only the
+  branch actually taken is ever evaluated. `sivyo` is required; writing
+  `kama` without a matching `sivyo` right after it falls back to
+  starting an ordinary `kama` block instead, exactly as before - so
+  existing scripts that happen to have a bare `kama` following an
+  expression on the same line are unaffected. Chains left to right for
+  an else-if ladder: `"A" kama x sivyo "B" kama y sivyo "C"`.
 
 ## v1.0.3 — language feature expansion + interpreter fixes
 
@@ -244,6 +245,16 @@ lexer bug the highlighting fix surfaced along the way.
   stopped 2 characters early. `TokenObj` now takes an explicit
   `raw_length` (the un-stripped match length), so `.size()`/`.span()`
   reflect the real source position for every token type.
+- **Added a light/dark background toggle for the code editor.** A new
+  "Dark Mode" toolbar button (mirrored by a matching View menu, for the
+  same reason the Run/Clear buttons exist) switches the editor between
+  its original light background and a dark one. Syntax highlighting
+  colors switch with it - `Token.Identifier` was previously hardcoded to
+  plain black, which would have been invisible against a dark
+  background, so it (and every other token color) now comes from a
+  small per-theme color table instead. Scoped to the editor only - the
+  console pane already has its own fixed black background and isn't
+  affected.
 
 ## v1.0.2 — initial commit
 

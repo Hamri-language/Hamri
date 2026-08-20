@@ -485,8 +485,46 @@ class StatementParser:
         # the expression.
         special = self.try_parse_special_value()
         if special is not None:
-            return ExpressionParser(self.continue_express(special)).parse()
-        return ExpressionParser(self.fetch_express()).parse()
+            value = ExpressionParser(self.continue_express(special)).parse()
+        else:
+            value = ExpressionParser(self.fetch_express()).parse()
+        return self.try_parse_ternary(value)
+
+    def try_parse_ternary(self,true_value):
+        # Detects a trailing '<true_value> kama <condition> sivyo
+        # <false_value>' ternary suffix right after an already-parsed
+        # value - a real inline conditional expression (like Python's
+        # 'x if cond else y'), e.g.
+        # `jina kama jina sawa na "Cookie" sivyo "Guest"`. 'kama' is a
+        # keyword, not an operator, so fetch_express()'s own
+        # operand-reading loop already stops cleanly right before it -
+        # this picks up exactly where that left off.
+        #
+        # Requires 'sivyo' - if it's missing (a malformed/incomplete
+        # ternary), token_position is rewound to right where it was
+        # before this method ever looked at 'kama', so the caller falls
+        # back to treating 'kama' as the start of a brand new statement
+        # (an ordinary if-block) exactly as it always has, rather than
+        # this method guessing at what a half-written ternary meant.
+        if self.next_token() is None or self.next_token().value != 'kama':
+            return true_value
+
+        rollback_position = self.token_position
+        self.token_position = self.token_position + 1  # land on 'kama'
+        condition = ExpressionParser(self.fetch_express()).parse()
+
+        if self.next_token() is None or self.next_token().value != 'sivyo':
+            self.token_position = rollback_position
+            return true_value
+
+        self.token_position = self.token_position + 1  # land on 'sivyo'
+        # Recursing (rather than a single fetch_express()) lets the
+        # false-branch itself be another ternary, so
+        # 'a kama x sivyo b kama y sivyo c' chains like an else-if
+        # ladder, evaluated left to right.
+        false_value = self.parse_expression_value()
+
+        return ConditionalExpression(true_value,condition,false_value)
 
     def continue_express(self,first):
         # Same operator-chaining loop as fetch_express()'s own while-loop,
@@ -1017,6 +1055,31 @@ def _fetch_instance(name):
         Error.throwException('darasa',name)
         return None
     return value
+
+
+class ConditionalExpression(Object):
+    # `<true_value> kama <condition> sivyo <false_value>` used as a
+    # value - a real inline conditional expression (Python's ternary,
+    # `x if cond else y`), e.g.
+    # `nafsi.jina = jina kama jina sawa na "Cookie" sivyo "Guest"`.
+    # Built by try_parse_ternary() (see parse_expression_value()) - not
+    # tied to any ExpressionParser operator symbol, since it isn't a
+    # binary operator at all, just two branches and a condition.
+    #
+    # Evaluated lazily: only the branch actually taken is ever
+    # evaluated, exactly like the kama/sivyo *statement* form already
+    # behaves - so a false_value that would itself error out (e.g.
+    # reading a property that's only set on the true branch) is never
+    # touched unless the condition actually picks it.
+    def __init__(self,true_value,condition,false_value):
+        self.true_value = true_value
+        self.condition = condition
+        self.false_value = false_value
+
+    def evaluate(self):
+        if self.condition.evaluate():
+            return self.true_value.evaluate()
+        return self.false_value.evaluate()
 
 
 class PropertyExpression(Object):
