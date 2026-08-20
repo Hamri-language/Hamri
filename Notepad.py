@@ -275,6 +275,11 @@ class Notepad:
 
     def __execute(self):
         """Execute the code and display output in the console"""
+        # Clear any output left over from a previous run first, so the
+        # console only ever shows this run's output rather than this
+        # run's output appended after a stale previous one.
+        self.__clearConsole()
+
         code = self.__thisTextArea.get("1.0", "end-1c")
 
         # Reset the interpreter's global state before each run, so a
