@@ -17,6 +17,30 @@
   expression on the same line are unaffected. Chains left to right for
   an else-if ladder: `"A" kama x sivyo "B" kama y sivyo "C"`.
 
+### Improvements
+
+- **Runtime errors now quote the source line they happened on** -
+  every message is prefixed with `Mstari <n>:`. Previously a statement
+  object never carried forward the line number of the token it started
+  on, so an error deep in a long script gave no clue where to look.
+  `StatementParser.parse()`'s single dispatch loop now stamps every
+  parsed statement with `.line` (the 1-indexed line its first token
+  came from - `TokenObj.line`, from `LexicalParser`, is 0-indexed);
+  every statement-list execution loop (`kwanza`'s own, and every
+  `kama`/`wakati`/`huku`/function-call body) sets
+  `symbolTable.current_line` from it right before that statement
+  actually runs. `Errors._report()` reads that value and prefixes it
+  onto every message, so any error raised while a statement is
+  executing - including one that bubbles up from deep inside a nested
+  expression - is automatically attributed to the right line, with no
+  per-expression-node plumbing needed. Two exceptions handled
+  explicitly: `leta` (`Kosa La Leta`) fails at parse time, before
+  `current_line` would even reflect it, so its own line is passed
+  through directly instead; and a runaway loop (`Kosa La Mzunguko`)
+  quotes the loop's own header line rather than whatever body statement
+  happened to be running when the 100,000-iteration cap hit, since the
+  loop itself is what's actually wrong.
+
 ## v1.0.3 — language feature expansion + interpreter fixes
 
 This is a large update that brings the interpreter up to date with an

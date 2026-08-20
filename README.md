@@ -602,7 +602,28 @@ kwisha
 ## Error messages
 
 Hamri reports runtime errors in Swahili and stops the script (exit code
-1) rather than continuing silently.
+1) rather than continuing silently. Every message is prefixed with
+`Mstari <n>:` ("Line n") — the source line the failing statement
+started on — so you don't have to guess which part of a long script
+actually went wrong:
+
+```
+Mstari 4: Kosa La Anwani: Jina hili {umri} halijulikani
+```
+
+The quoted line is always the *statement* that was running when the
+error happened — the `chapa`/`kama`/`wakati`/function-call line itself,
+not some internal detail of how the expression inside it was built.
+That's true even when the failure comes from deep inside a nested
+expression (e.g. an undefined property read as part of a larger
+`chapa`), from inside a loop or function body, or from a `leta` import
+that couldn't find its file (reported at parse time, before the script
+even starts running, since `leta` has no runtime step of its own). A
+runaway `wakati`/`huku` loop (`Kosa La Mzunguko`) is the one exception
+worth calling out — it quotes the loop's own header line, not whatever
+body statement happened to be running on the iteration that tripped
+the 100,000-iteration cap, since the loop itself (not that particular
+statement) is what's actually wrong.
 
 | Message | Cause |
 |---|---|
