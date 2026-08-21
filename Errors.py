@@ -65,7 +65,10 @@ class Errors:
         'fahirisi': IndexOutOfRangeException,
         'orodha': NotAListException,
         'darasa': NotAnObjectException,
-        'leta': ImportException
+        'leta': ImportException,
+        'tumia': ModuleNotUsedException,
+        'hoja': InvalidArgumentException,
+        'futa': ValueNotFoundException
 
         }
 
@@ -158,6 +161,59 @@ class NotAnObjectException:
 
     def execute(self):
         _report('Kosa La Darasa: {' +self.name +'} si kitu (not an object)',self.line,self.column)
+        symbolTable.exit(1)
+
+
+class ModuleNotUsedException:
+    # 'tumia' = Swahili for "use" - thrown when a script reaches for a
+    # built-in module's member (e.g. `Hesabu.mzizi(16)`) without having
+    # activated that module first with its own 'tumia' statement
+    # (`tumia Hesabu`) - deliberately a separate, explicit step from
+    # merely writing the module's name, the same way 'leta' has to
+    # succeed before an imported class/method becomes usable.
+
+    def __init__(self,arg,line=None,column=None):
+        self.name = arg
+        self.line = line
+        self.column = column
+
+    def execute(self):
+        _report('Kosa La Tumia: moduli hii {' +self.name +'} haijatumiwa - andika "tumia ' +self.name +'" kabla ya kuitumia (module not in use - write "tumia ' +self.name +'" before using it)',self.line,self.column)
+        symbolTable.exit(1)
+
+
+class InvalidArgumentException:
+    # 'hoja' = Swahili for "argument" - a built-in module call (e.g.
+    # `Hesabu.mzizi(-1)`, the equivalent of Python's own
+    # `math.sqrt(-1)`) was given argument(s) it can't work with. Reported
+    # as a clean Hamri-level error instead of letting the underlying
+    # Python exception (ValueError/TypeError/...) escape as a raw
+    # traceback - see BuiltinModuleCallExpression.evaluate() in
+    # StatementParser.py.
+
+    def __init__(self,arg,line=None,column=None):
+        self.name = arg
+        self.line = line
+        self.column = column
+
+    def execute(self):
+        _report('Kosa La Hoja: hoja isiyokubalika kwa {' +self.name +'} (invalid argument)',self.line,self.column)
+        symbolTable.exit(1)
+
+
+class ValueNotFoundException:
+    # 'futa <value> kutoka <orodha>' (erase <value> from <orodha>)
+    # couldn't find a matching element anywhere in the list to remove,
+    # the same way Python's own list.remove(value) raises ValueError
+    # when the value isn't present.
+
+    def __init__(self,arg,line=None,column=None):
+        self.name = arg
+        self.line = line
+        self.column = column
+
+    def execute(self):
+        _report('Kosa La Futa: {} haipo (value not found in list)'.format(self.name),self.line,self.column)
         symbolTable.exit(1)
 
 

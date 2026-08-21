@@ -89,9 +89,14 @@ symbols.
 | `kwenye` | into, at | Marks the target list for `weka`, or the list being looped over in a for-each `huku` |
 | `idadi` | count, number | Length of a list — `n = idadi orodha` |
 | `ondoa` | remove | Removes an item from a list by position — `ondoa <index> kutoka <list>` |
-| `darasa` | class | Defines a class — `darasa Jina ... kwisha` |
+| `futa` | erase, delete | Removes an item from a list by value — `futa <value> kutoka <list>` |
+| `darasa` | class | Defines a class — `darasa Jina ... kwisha`, optionally `darasa Jina inarithi Mzazi ... kwisha` to inherit from another class |
+| `inarithi` | inherit | Marks the parent class a `darasa` extends — `darasa Mtoto inarithi Mzazi` |
+| `msingi` | base | Declares a shared/static class variable inside a `darasa` body — `msingi jina = <value>` |
 | `leta` | bring | Imports a class, or one of its methods, from another file |
 | `aina` | kind, type | Prints what kind of value an expression holds — `aina umri` |
+| `tumia` | use | Activates a built-in module — `tumia Hesabu` |
+| `Hesabu` | (arithmetic) | Hamri's built-in math module — see [Built-in modules](#built-in-modules-tumia) |
 
 `nafsi` ("self", used inside a method to refer to the current object) is
 **not** a reserved keyword the way the others above are — it's an
@@ -100,6 +105,45 @@ instance before a method runs. See [Classes](#classes-darasa) below.
 
 Word operators and symbol operators can be mixed freely in the same
 script — `umri ni 20` and `umri = 20` do exactly the same thing.
+
+> Every word in the table above is reserved everywhere in a script, not
+> just where you'd expect it — so a variable or property that happens
+> to share a name with one of the newer additions (`tumia`, `Hesabu`,
+> `futa`, `inarithi`, `msingi`) stops working as a plain identifier.
+> Keyword matching is case-sensitive, so a lowercase `hesabu` (as
+> opposed to capitalized `Hesabu`) is unaffected — but a variable
+> literally named `futa`, `inarithi`, `msingi`, or `tumia` will need
+> renaming.
+
+## Numbers
+
+Whole numbers (`10`, `-3`) and decimals (`3.14`, `-0.5`) can both be
+written directly as literals. A leading `-` always means negation, not
+subtraction, when it sits where a value is expected — `x = -5`,
+`chapa -3.14`, and `chapa 10 - -5` (ten minus negative five, i.e. `15`)
+all read the way you'd expect. `--5` (a double negative) is also valid
+and evaluates to `5`.
+
+```
+kwanza
+    chapa 3.14
+    chapa -5
+    x = -2.5
+    chapa x
+kwisha
+```
+
+Parentheses `(...)` group part of an expression so it's evaluated as
+one unit before anything outside the parentheses touches it — the one
+way to override Hamri's own left-to-right evaluation order (see
+[Operators](#operators) below for what that means without grouping):
+
+```
+kwanza
+    chapa (2 + 3) * 4    # 20 - the group is evaluated first
+    chapa 2 + (3 * 4)    # 14 - forces normal math order instead
+kwisha
+```
 
 ## Variables & types
 
@@ -117,7 +161,8 @@ kwisha
 | Type | Example | Notes |
 |---|---|---|
 | Text | `"hello"` or `'hello'` | Double or single quotes |
-| Whole number | `10` | No separate float type — see Operators below for what division returns |
+| Whole number | `10`, `-10` | See [Numbers](#numbers) below for negative literals |
+| Decimal | `3.14`, `-0.5` | See [Numbers](#numbers) below |
 | Boolean | `true` / `false` | Lowercase only |
 
 Check what kind of value something is with `aina` ("kind/type") —
@@ -351,6 +396,12 @@ kwisha
 | `==` | `sawa na` | Loose equality | `1 == true` is true — numbers and booleans compare loosely |
 | | `kabisa` / `hakika` | Strict equality | True only if value *and* type match — `1 kabisa true` is false, unlike `==`/`sawa na` |
 
+> Expressions are evaluated strictly left to right, with no operator
+> precedence — `2 + 3 * 4` is `(2 + 3) * 4` (`20`), not the `14` you'd
+> get from ordinary math notation. Use parentheses (see
+> [Numbers](#numbers) above) to force a different order:
+> `2 + (3 * 4)` gives `14`.
+
 ## Comments
 
 Anything after a `#` on a line is ignored — use it for notes to
@@ -431,36 +482,50 @@ kwanza
 kwisha
 ```
 
+To remove an item by its *value* instead of its position — wherever it
+happens to be in the list — use `futa <value> kutoka <list>` ("erase
+value from list"). It removes the first matching element, the same way
+Python's `list.remove()` does, and reports `Kosa La Futa` if nothing in
+the list matches:
+
+```
+kwanza
+    orodha = ["chai", "kahawa", "maji", "kahawa"]
+    futa "kahawa" kutoka orodha
+    chapa orodha    # [chai, maji, kahawa] - only the first "kahawa" is removed
+kwisha
+```
+
 Lists can nest — an item inside `[...]` can be another list literal, to
-any depth:
+any depth — and a nested list can be indexed into directly, one level
+per `[...]`, without an intermediate variable:
 
 ```
 kwanza
     matrix = [[1, 2], [3, 4]]
     chapa matrix
+    chapa matrix[0][1]      # 2 - reaches straight into the nested list
 
-    row = matrix[0]
-    chapa row
-    chapa row[1]
+    matrix[1][0] = 99       # chained indexing works for assignment too
+    chapa matrix
 kwisha
 ```
 
 > A list variable can also come from a function's return value
 > (`orodha = make_list()`) or be built from other variables
-> (`[a, b, c]`). Indexing, appending, removing, and length all check
-> that the variable is actually a list first, and that an index is in
-> range, reporting `Kosa La Orodha` or `Kosa La Fahirisi` instead of
-> crashing. Reaching into a nested list takes two steps, not one —
-> `row = matrix[0]` then `row[1]`, rather than `matrix[0][1]` directly.
+> (`[a, b, c]`), and an element itself can now be any expression Hamri
+> already supports — a negative literal, a parenthesized group, a
+> property/method/index read, and so on (`[1, -2, (1 + 1), mtu1.jina]`).
+> Indexing, appending, removing, and length all check that the variable
+> is actually a list first, and that an index is in range, reporting
+> `Kosa La Orodha` or `Kosa La Fahirisi` instead of crashing.
 
 ## Classes: `darasa`
 
 `darasa` ("class") groups methods (functions) that belong together and
-can be instantiated as objects. A class body contains only `eleza`
-method definitions — there's no way to declare a plain property
-directly in the class body. Instead, properties are set on an instance
-from inside a method, using `nafsi` ("self"), which Hamri automatically
-binds to the current object every time a method runs.
+can be instantiated as objects. Properties are usually set on an
+instance from inside a method, using `nafsi` ("self"), which Hamri
+automatically binds to the current object every time a method runs.
 
 ```
 darasa Mtu
@@ -476,6 +541,28 @@ kwisha
 kwanza
     mtu1 = Mtu("Amara")
     mtu1.salamu()
+kwisha
+```
+
+A class body can also declare a property by name alone, with no
+assignment, so it exists (defaulting to nothing set — reading it prints
+as `None` until something assigns it) even before a constructor ever
+runs:
+
+```
+darasa Mtu
+    umri
+
+    eleza jenga(jina)
+        nafsi.jina = jina
+    kwisha
+kwisha
+
+kwanza
+    mtu1 = Mtu("Amara")
+    chapa mtu1.umri    # None - declared, but never assigned
+    mtu1.umri = 30
+    chapa mtu1.umri
 kwisha
 ```
 
@@ -538,9 +625,69 @@ kwisha
 > operator, just like a function call or an indexed read —
 > `chapa "Habari, " + nafsi.jina` and
 > `nafsi.count = nafsi.count ongeza 1` both work as written, no
-> intermediate variable needed. There's no inheritance yet (one
-> `darasa` can't extend another) and no static/shared class variables —
-> every property lives on one specific instance.
+> intermediate variable needed.
+
+### Inheritance: `inarithi`
+
+A class can extend another with `inarithi` ("inherit") —
+`darasa Mtoto inarithi Mzazi ... kwisha`. `Mtoto` gets every method,
+`msingi` variable, and bare property declaration `Mzazi` has, for free;
+it only needs to define `eleza`/`msingi`/properties of its own for
+whatever it wants to override or add:
+
+```
+darasa Mnyama
+    eleza jenga(jina)
+        nafsi.jina = jina
+    kwisha
+
+    eleza tangaza()
+        rudisha nafsi.jina + " anasema " + nafsi.sauti
+    kwisha
+kwisha
+
+darasa Mbwa inarithi Mnyama
+    eleza jenga(jina)
+        nafsi.jina = jina
+        nafsi.sauti = "Woof"
+    kwisha
+kwisha
+
+kwanza
+    rex = Mbwa("Rex")
+    chapa rex.tangaza()    # inherited from Mnyama - Mbwa never defines tangaza itself
+kwisha
+```
+
+A subclass that defines its own `jenga` overrides the parent's
+constructor completely; one that doesn't define `jenga` at all
+transparently uses the parent's instead, the same way any other
+inherited method works.
+
+### Shared/static class variables: `msingi`
+
+`msingi` ("base") declares a variable that belongs to the *class*
+itself, not to any one instance — every object made from the class (and
+every subclass, unless it declares its own `msingi` variable of the same
+name) sees the same single value. Reach it from outside `nafsi`, with
+the class's own name:
+
+```
+darasa Mnyama
+    msingi idadi_ya_wanyama = 0
+
+    eleza jenga(jina)
+        nafsi.jina = jina
+        Mnyama.idadi_ya_wanyama = Mnyama.idadi_ya_wanyama + 1
+    kwisha
+kwisha
+
+kwanza
+    simba = Mnyama("Simba")
+    paka = Mnyama("Paka")
+    chapa Mnyama.idadi_ya_wanyama    # 2 - shared across both instances
+kwisha
+```
 
 ## Modules: `leta`
 
@@ -603,6 +750,48 @@ kwisha
 > a class is available everywhere in the rest of the file, not just
 > after the `leta` line.
 
+## Built-in modules: `tumia`
+
+`tumia` ("use") activates one of Hamri's built-in modules — functionality
+that ships with the interpreter itself, reached with the same dot
+notation as an object's own methods, but without writing or importing
+any `.ham` file for it. Write `tumia <ModuleName>` once (typically near
+the top of your `kwanza` block) before using anything from that module;
+reaching for a module's member before activating it fails with
+`Kosa La Tumia`.
+
+Hamri ships one built-in module so far — `Hesabu` ("arithmetic"), a
+small math toolbox:
+
+| Function | Equivalent | Meaning |
+|---|---|---|
+| `Hesabu.kamili(x)` | `abs(x)` | Absolute value |
+| `Hesabu.kubwa(a, b)` | `max(a, b)` | The larger of two values |
+| `Hesabu.ndogo(a, b)` | `min(a, b)` | The smaller of two values |
+| `Hesabu.mzizi(x)` | `math.sqrt(x)` | Square root |
+| `Hesabu.juu(x)` | `math.ceil(x)` | Round up |
+| `Hesabu.chini(x)` | `math.floor(x)` | Round down |
+| `Hesabu.kadirisha(x)` | `round(x)` | Round to the nearest whole number |
+
+```
+kwanza
+    tumia Hesabu
+
+    chapa Hesabu.kamili(-5)        # 5
+    chapa Hesabu.kubwa(3, 7)       # 7
+    chapa Hesabu.mzizi(16)         # 4.0
+    chapa Hesabu.juu(4.3)          # 5
+    chapa Hesabu.chini(4.7)        # 4
+    chapa Hesabu.kadirisha(4.5)    # 4 - banker's rounding, same as Python's round()
+kwisha
+```
+
+> A call with an argument the underlying function can't handle (e.g.
+> `Hesabu.mzizi(-1)`, a negative square root) reports `Kosa La Hoja`
+> instead of crashing. `Hesabu` doesn't cover every one of Python's
+> math functions yet (no constants like π, no trigonometry, no
+> logarithms/exponents, no factorial) — just this starting set.
+
 ## Error messages
 
 Hamri reports runtime errors in Swahili and stops the script (exit code
@@ -640,6 +829,9 @@ particular statement) is what's actually wrong.
 | `Kosa La Fahirisi` (Index Error) | Used a list position that's negative or past the end of the list |
 | `Kosa La Darasa` (Class Error) | Tried to read a property or call a method on a variable that isn't an object (an instance of a `darasa`) |
 | `Kosa La Leta` (Import Error) | `leta` couldn't find the file, or the requested class/method doesn't exist in it |
+| `Kosa La Tumia` (Module-Not-In-Use Error) | Reached for a built-in module's member before activating it with `tumia` |
+| `Kosa La Hoja` (Argument Error) | A built-in module call was given an argument it can't work with (e.g. a negative square root) |
+| `Kosa La Futa` (Value Error) | `futa <value> kutoka <list>` didn't find a matching value anywhere in the list |
 
 ## Current limitations
 
@@ -648,15 +840,11 @@ yet:
 
 | Limitation | Details |
 |---|---|
-| Decimal literals | You can't write `3.5` directly in source — decimals currently only appear as a division result. |
-| Negative number literals | You can't write `-5` directly (it's read as subtraction) — store it in a variable via `0 punguza 5` instead. |
-| Parenthesized grouping | You can't use `(...)` to control order of operations inside an expression — break it into steps with intermediate variables instead. |
-| List literals with compound elements | Each item in `[...]` must be a single literal, variable, nested list, or a single function/constructor/property/index call, not its own multi-operator expression (`[1 + 2, 3]` won't work). |
-| Chained indexing | You can't reach into a nested list in one step (`matrix[0][1]`) — assign the inner list to a variable first (`row = matrix[0]`), then index that (`row[1]`). |
-| Removing by value | `ondoa` removes an item by its position, not by matching a value — there's no "remove this value wherever it appears" yet. |
-| No inheritance or static/shared class variables | A `darasa` can't extend another class, and there's no way to share a variable across every instance of a class — only per-instance properties set via `nafsi`. |
-| No bare property declarations in a class body | A `darasa` block may only contain `eleza` method definitions — properties only come into existence once a method (typically the `jenga` constructor) assigns them with `nafsi.property = value`. |
+| No operator precedence | Expressions are evaluated strictly left to right (`2 + 3 * 4` is `20`, not `14`) — use parentheses to force a different order, see [Numbers](#numbers). |
 | No renaming or scoping on `leta` | An imported class/method always keeps its original name, and becomes available everywhere in the file once imported. |
+| `Hesabu` covers only a starting set of functions | No π/e constants, trigonometry, logarithms/exponents, or factorial yet — see [Built-in modules](#built-in-modules-tumia). |
+| No explicit "call the parent's version" (`super`) | A subclass method that overrides a parent's can't explicitly call the overridden version — only *not* defining an override falls back to the parent's. |
+| New reserved keywords can collide with existing identifiers | `tumia`, `Hesabu`, `futa`, `inarithi`, and `msingi` are all reserved now — a variable or property already using one of those exact names (case-sensitively) needs renaming. |
 
 ## Full example
 

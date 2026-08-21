@@ -124,11 +124,20 @@ class Var(Object):
         return result
 
 class Int(Object):
-    # Wraps a numeric literal token (its raw text, e.g. "42") and turns
-    # it into a real Python int only when evaluate() is actually called.
+    # Wraps a numeric literal token (its raw text, e.g. "42" or "3.14")
+    # and turns it into a real Python number only when evaluate() is
+    # actually called. The class name stays "Int" (rather than being
+    # renamed to something like "Number") to keep the ripple from this
+    # change small - every other file that already refers to this class
+    # (Object.cast()'s data_types dict, etc.) keeps working unchanged.
+    # Whether the result comes back as an int or a float depends purely
+    # on whether the literal's own text contains a '.' - the lexer only
+    # ever hands this class digit-only or digit-dot-digit text (see
+    # Tokens.integer in LexicalParser.py), so this check is unambiguous.
     def evaluate(self):
 
-        return int(self.token)
+        text = str(self.token)
+        return float(text) if '.' in text else int(text)
 
 class Str(Object):
     # Wraps a string literal token. '{}'.format(...) is just a safe way

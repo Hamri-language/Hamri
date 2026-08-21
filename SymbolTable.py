@@ -17,10 +17,13 @@ class SymbolTable:
                 "nje":[]
             },
             "classes":{
-                # Simple presence-registry populated by 'darasa' - maps a
-                # class name to True, purely so a call like `Mtu(args)`
-                # can tell "this name is a class, construct an instance"
-                # apart from "this name is a function, call it".
+                # Populated by 'darasa' - maps a class name to a small
+                # dict (see set_class() below) covering everything a
+                # call like `Mtu(args)` needs to tell "this name is a
+                # class, construct an instance" apart from "this name is
+                # a function, call it", plus inheritance ('inarithi'),
+                # shared/static variables ('msingi'), and bare property
+                # declarations.
             }
         }
         self.context =  {"var-scope": "global","function-scope":"nje","class-scope":"kwanza"}
@@ -107,14 +110,110 @@ class SymbolTable:
         # of just a line.
         self.current_column = None
 
+        # Names of every built-in module (see BuiltinModules.py) that's
+        # been activated with 'tumia' so far, e.g. {'Hesabu'} after a
+        # script runs `tumia Hesabu`. Checked by
+        # BuiltinModuleCallExpression.evaluate() before it'll actually
+        # dispatch a call like `Hesabu.mzizi(16)` - same spirit as
+        # 'leta' needing to succeed before an imported class/method can
+        # be used, just for a module that's always available rather
+        # than loaded from a file.
+        self.used_modules = set()
+
+
+    def use_module(self,name):
+        self.used_modules.add(name)
+
+    def is_module_used(self,name):
+        return name in self.used_modules
 
     def new_instance_id(self):
         id_ = self.next_instance_id
         self.next_instance_id = self.next_instance_id + 1
         return id_
 
-    def set_class(self,name):
-        self.table['classes'][name] = True
+    def set_class(self,name,parent=None):
+        # A class's registry entry used to be just a bare presence flag
+        # (True) - every consumer only ever checked `name in
+        # self.table['classes']`, never the value itself (see
+        # FunctionCallStatement.execute() and try_parse_call() in
+        # StatementParser.py), so upgrading it to a small dict here is
+        # safe. Three things now live per class:
+        #   'parent'     - the class this one 'inarithi's ("inherits")
+        #                  from, or None for a class with no parent.
+        #   'shared'     - 'msingi' (shared/static) variable storage - one
+        #                  dict per class, completely separate from any
+        #                  instance's own per-object property storage
+        #                  (see Instance in StatementParser.py), so a
+        #                  msingi variable is genuinely shared across
+        #                  every instance rather than copied per-object.
+        #   'properties' - bare property names declared directly in the
+        #                  class body with no assignment - every new
+        #                  instance gets each of these pre-set to a
+        #                  None default (see Instance.__init__), so
+        #                  reading one before it's ever explicitly
+        #                  assigned doesn't throw an undefined-name
+        #                  error the way an ordinary unset variable
+        #                  would.
+        if name in self.table['classes']:
+            # Re-registering an already-known name (a script only
+            # 'darasa's a given name once in practice) - keep whatever
+            # was already recorded rather than clobbering it; only fill
+            # in 'parent' if it wasn't set yet.
+            if parent is not None:
+                self.table['classes'][name]['parent'] = parent
+        else:
+            self.table['classes'][name] = {'parent': parent,'shared': {},'properties': []}
+
+    def get_class_parent(self,name):
+        entry = self.table['classes'].get(name)
+        return entry.get('parent') if isinstance(entry,dict) else None
+
+    def class_chain(self,name):
+        # Yields `name`, then its parent, then its parent's parent, and
+        # so on up to the root - this is the method/constructor/msingi-
+        # variable lookup ORDER inheritance relies on everywhere: a
+        # class's own definition always wins, an ancestor's is only
+        # ever used as a fallback once every more specific class in the
+        # chain has already been checked and come up empty. Stops early
+        # (rather than looping forever) if 'inarithi' somehow formed a
+        # cycle.
+        seen = set()
+        current = name
+        while current is not None and current not in seen:
+            seen.add(current)
+            yield current
+            current = self.get_class_parent(current)
+
+    def declare_property(self,class_name,property_name):
+        # Records a bare property declaration (see set_class's own
+        # comment on 'properties' above) - a no-op if the class name
+        # somehow isn't registered yet, which should never actually
+        # happen since 'darasa' always registers the class before any
+        # of its own body is parsed.
+        if class_name in self.table['classes']:
+            self.table['classes'][class_name]['properties'].append(property_name)
+
+    def declared_properties(self,class_name):
+        # Every bare-declared property name for this class AND all its
+        # ancestors combined - what Instance.__init__ pre-populates a
+        # brand new instance's storage with, so every one of them reads
+        # back a None default until something (typically the
+        # constructor) actually assigns it.
+        names = []
+        for cls in reversed(list(self.class_chain(class_name))):
+            entry = self.table['classes'].get(cls)
+            if isinstance(entry,dict):
+                names.extend(entry.get('properties',[]))
+        return names
+
+    def get_class_shared(self,class_name):
+        # The 'msingi' (shared/static) variable dict belonging to exactly
+        # this one class (not walking the inheritance chain - callers
+        # that need inherited msingi lookup do that themselves via
+        # class_chain(), same as method/constructor resolution).
+        entry = self.table['classes'].get(class_name)
+        return entry.get('shared') if isinstance(entry,dict) else None
 
     def load_module_source(self,filename):
         # Used by 'leta' to fetch another file's Hamri source by name.
