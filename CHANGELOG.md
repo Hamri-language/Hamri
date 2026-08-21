@@ -2,6 +2,124 @@
 
 ## Unreleased
 
+### New language features
+
+- **Decimal and negative number literals** - `3.14` and `-5` can now be
+  written directly, instead of only ever appearing as a division
+  result or requiring a `0 punguza 5` workaround. `Tokens.integer` in
+  `LexicalParser.py` now tries the full "digits DOT digits" shape
+  first (`r'[0-9]+\.[0-9]+|\.\b[0-9]+|[0-9]+'`) so a literal like
+  `"3.14"` claims its whole span before `divider`'s bare `.` gets a
+  chance to split it into three tokens; `Objects.Int.evaluate()` now
+  returns a `float` when the literal's text contains a `.`, an `int`
+  otherwise. Negative literals are handled at the parser level -
+  `StatementParser.read_operand()` recognizes a `-` sitting in an
+  OPERAND position (never ambiguous with binary subtraction, which is
+  only ever read from an OPERATOR position) and wraps whatever follows
+  in a new `NegationExpression` - so `-5`, `-3.14`, `-mzizi(16)`,
+  `-(2 + 3)`, and even `--5` (double negative) all work, anywhere an
+  operand can appear, including inside a list literal or as a function
+  argument.
+- **Parenthesized grouping** - `(2 + 3) * 4` now overrides Hamri's own
+  strict left-to-right expression fold (still no real operator
+  precedence otherwise - `2 + 3 * 4` is still `20`, not `14`, unless
+  you group it yourself). `read_operand()` recurses into a fresh
+  `fetch_express()`/`ExpressionParser` pass for whatever's inside a
+  `(...)`, producing one fully-built (but not yet evaluated) Expression
+  object that the outer fold only ever sees as a single opaque operand.
+  Required a matching fix to `fetch_express()`'s "nothing to read here"
+  short-circuit, which used to fire for ANY divider token immediately
+  ahead (including `(`, which means the opposite - "start reading a
+  group" - not "stop, there's nothing here") - narrowed to only fire
+  for `)`/`]`.
+- **Chained list indexing** - `matrix[0][1]` now reaches into a nested
+  list in one step, for both reads and assignment
+  (`matrix[0][1] = 99`), instead of requiring `row = matrix[0]` first.
+  `IndexExpression`'s `list_name` can now be either a plain variable
+  name (the original, single-level case) or another already-built
+  `IndexExpression` standing in for everything before the last `[` -
+  evaluating the outer one resolves the inner one first via a new
+  shared `_resolve_list_base()` helper, so a chain of any depth works
+  without any code needing to know how deep it is. `try_parse_index()`
+  and the top-level list-indexing statement branch both loop for as
+  many consecutive `[...]` groups as are actually there.
+- **`futa <value> kutoka <list>`** - removes a list item by *value* (the
+  first match, like Python's `list.remove()`), alongside the original
+  by-position form (`ondoa <index> kutoka <list>`, kept unchanged and
+  now exclusively positional). A dedicated keyword of its own, rather
+  than a marker word after `ondoa`, so the two forms need no extra
+  token to tell apart. Reports a new `Kosa La Futa` error if nothing in
+  the list matches.
+- **Built-in modules: `tumia`** - a new bare-name import statement
+  (`tumia Hesabu`), distinct from `leta ... kutoka "faili"` (which
+  loads user-written classes/methods from a file). Activates one of
+  Hamri's built-in modules - functionality that ships with the
+  interpreter itself and needs no file of its own - reached with
+  ordinary dot notation afterward (`Hesabu.mzizi(16)`). New
+  `BuiltinModules.py` registers each module's Python implementation in
+  a `BUILTIN_MODULES` dict; new `UseModuleStatement`/
+  `BuiltinModuleCallExpression`/`BuiltinModuleCallStatement` in
+  `StatementParser.py` handle activation and dispatch (the latter
+  wraps the underlying Python call in a `try`/`except` so a domain
+  error like `Hesabu.mzizi(-1)` reports a clean `Kosa La Hoja` instead
+  of a raw Python traceback). Reaching for a module's member before
+  `tumia`-ing it reports a new `Kosa La Tumia` error.
+  - Ships with one module, **`Hesabu`** ("arithmetic") - capitalized,
+    and highlighted as a keyword (in `LexicalParser.py`'s
+    `Tokens.keyword`, and mirrored into the website Playground's
+    syntax highlighting) - with seven functions to start:
+    `kamili` (`abs`), `kubwa` (`max`), `ndogo` (`min`), `mzizi`
+    (`math.sqrt`), `juu` (`math.ceil`), `chini` (`math.floor`), and
+    `kadirisha` (`round`).
+- **Class inheritance: `darasa Mtoto inarithi Mzazi`** - a class can now
+  extend another with the new `inarithi` ("inherit") keyword. A child
+  class gets every method, `msingi` variable, and bare property
+  declaration its parent has, unless it defines its own version of the
+  same name. `symbolTable.set_class()` now stores a small per-class
+  dict (`{'parent', 'shared', 'properties'}`) instead of a bare
+  presence flag, and a new `symbolTable.class_chain()` generator walks
+  a class, then its parent, then its parent's parent, and so on -
+  reused by method resolution (`MethodCallExpression.evaluate()`),
+  constructor resolution (`FunctionCallStatement.execute()`), and
+  `msingi`-variable resolution alike, so "child's own version wins,
+  ancestor's is the fallback" is one lookup order, expressed once.
+- **Shared/static class variables: `msingi`** - `msingi <name> = <value>`
+  inside a `darasa` body declares a variable that belongs to the class
+  itself, not to any one instance - every instance (and every subclass
+  that doesn't declare its own same-named `msingi` variable) sees the
+  same one value. Reached from outside via `ClassName.member` (e.g.
+  `Mtu.idadi`), a new dispatch path parallel to but distinct from an
+  ordinary instance's `obj.property` - told apart purely by whether
+  the name is a registered class name rather than a variable holding
+  an `Instance`. New `ClassSharedPropertyExpression`/
+  `ClassSharedAssignmentStatement` plus `_resolve_shared_dict_for_read()`/
+  `_resolve_shared_dict_for_write()` (both walking `class_chain()`, so
+  a write to an inherited `msingi` variable updates the ancestor's one
+  real copy rather than shadowing it) implement the read/write paths.
+- **Bare property declarations in a class body** - writing a lone
+  property name (no assignment) directly in a `darasa` body, e.g. just
+  `umri` on its own line, declares that every instance of the class
+  should have that property, defaulting to `None` until something
+  (typically `jenga`) assigns it - instead of a property only coming
+  into existence the first time `nafsi.property = value` runs.
+  `symbolTable.declare_property()`/`declared_properties()` track this
+  per class (and its whole `inarithi` ancestry); `Instance.__init__()` now
+  pre-populates a new instance's storage with a `Literal(None)` for
+  each one.
+- **List literals can now hold any expression as an element**, not just
+  a literal/variable/nested-list/call - `[1, -2, (1 + 1), mtu1.jina]`
+  all work now. `try_parse_list_literal()`'s hand-rolled per-element
+  check (only ever handling a nested list or a `name(args)` call) was
+  replaced with a plain call to `read_operand()` - the same general
+  operand reader `fetch_express()` itself already uses - which already
+  covers every one of these shapes (and more) on its own.
+
+> **Note:** five new words are now reserved everywhere in a script:
+> `tumia`, `Hesabu`, `futa`, `inarithi`, `msingi`. Keyword matching stays
+> case-sensitive (a lowercase `hesabu` is unaffected), but an existing
+> script with a variable or property literally named one of these five
+> will need to rename it.
+
 ### Improvements
 
 - **Runtime errors now also quote a column, not just a line** - the

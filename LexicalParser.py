@@ -69,7 +69,33 @@ class Tokens(enum.Enum):
    # '\bna\b' would ever be added as its own keyword/operator - there
    # isn't one today, so 'na' outside this phrase is just an ordinary
    # variable name, same as any other unreserved word.
-   keyword = r'(chapa|kama|jaza|kwisha|kwanza|eleza|sivyo|wakati|huku|\bkutoka\b|\bhadi\b|\brudisha\b|\bweka\b|\bkwenye\b|\bidadi\b|\bondoa\b|\bdarasa\b|\bleta\b|\baina\b|\binazidi\b|\bhaizidi\b|\bni\b|\bkabisa\b|\bhakika\b|\bongeza\b|\bpunguza\b|\bmara\b|\bgawa\b|\bsawa\s+na\b)'
+   # 'tumia' ("use") activates a built-in module (see
+   # BuiltinModules.py) - e.g. 'tumia Hesabu' - a bare-name import
+   # statement, distinct from 'leta ... kutoka "faili"' (which loads
+   # user-written classes/methods from another .ham file). 'Hesabu'
+   # (capitalized - deliberately NOT case-insensitive, since keyword
+   # matching here is plain case-sensitive regex, so a lowercase
+   # variable named 'hesabu' elsewhere in a script stays an ordinary,
+   # unrelated variable) is Hamri's first built-in module's own name,
+   # highlighted as a keyword everywhere the other keywords are (see
+   # Notepad.py and playground.htm's syntax highlighting).
+   # 'futa' ("erase/delete") - a dedicated by-value list-remove statement,
+   # 'futa <value> kutoka <orodha>' - removes the first element that
+   # equals <value>, wherever it is in the list. A standalone keyword
+   # (not a marker word after 'ondoa') so 'ondoa' itself stays a single,
+   # unambiguous by-position removal - 'ondoa <index> kutoka <orodha>' -
+   # with no extra token needed to tell the two forms apart; see the
+   # 'futa'/'ondoa' cases in StatementParser.parseStatement().
+   # 'inarithi' ("inherit") - 'darasa Mtoto inarithi Mzazi ... kwisha' -
+   # gives Mtoto every method (and msingi/property declaration) of Mzazi
+   # that it doesn't define its own version of.
+   # 'msingi' ("base/foundation") - a shared/static class variable declared
+   # directly in a darasa body, e.g. 'msingi idadi = 0' - one value shared by
+   # every instance of the class (and every subclass, via 'inarithi'), reached
+   # from outside via ClassName.member (e.g. 'Mtu.idadi'), NOT via
+   # nafsi. - unlike a nafsi.property, there's only ever one copy of a
+   # msingi variable per class, no matter how many instances exist.
+   keyword = r'(chapa|kama|jaza|kwisha|kwanza|eleza|sivyo|wakati|huku|\bkutoka\b|\bhadi\b|\brudisha\b|\bweka\b|\bkwenye\b|\bidadi\b|\bondoa\b|\bfuta\b|\bdarasa\b|\bleta\b|\baina\b|\binazidi\b|\bhaizidi\b|\bni\b|\bkabisa\b|\bhakika\b|\bongeza\b|\bpunguza\b|\bmara\b|\bgawa\b|\btumia\b|\bHesabu\b|\binarithi\b|\bmsingi\b|\bsawa\s+na\b)'
    # NOTE: '[' and ']' used to be written as '\\[' and '\\]' here, which in
    # a raw string is an escaped literal BACKSLASH followed by a bracket -
    # not the bracket itself. That silently meant square brackets were
@@ -79,7 +105,22 @@ class Tokens(enum.Enum):
    # structural separator, not a computable operator.
    divider = r'(\[|\]|\(|\)|\.)'
    boolean = r'true|false'
-   integer = r'\.\b[0-9]+|[0-9]+'
+   # Decimal shape ('[0-9]+\.[0-9]+') is tried FIRST, deliberately -
+   # this pattern lives in the same top-level alternation as 'divider'
+   # above (both get joined into one big finditer() pattern - see
+   # tokenize() below), and Python's re module tries alternatives
+   # left-to-right, taking the first one that matches at the current
+   # scan position - NOT the longest overall match. Since 'divider'
+   # comes before 'integer' in that alternation and its own pattern
+   # includes a bare '.', a literal like "3.14" used to mis-tokenize
+   # as three separate tokens (integer "3", divider ".", integer
+   # "14") - 'integer' never got a chance to look past the lone "3"
+   # before 'divider' claimed the dot. Matching the full "digits DOT
+   # digits" shape as one alternative up front lets 'integer' claim
+   # the whole span starting from the first digit, before 'divider'
+   # is ever tried at the dot's position. The old '\.\b[0-9]+' shape
+   # is kept as a fallback right after it for backwards compatibility.
+   integer = r'[0-9]+\.[0-9]+|\.\b[0-9]+|[0-9]+'
    string = r'"(.*?)"|\'(.*?)\'|\b[0-9]+'
    # NOTE: this used to also match a trailing (?:\.[a-z_]\w*)* on both
    # identifier alternatives, which silently fused a dotted path like

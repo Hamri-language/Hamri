@@ -10,6 +10,8 @@ from Logger import Log
 
 from LexicalParser import LexicalParser, TokenObj
 
+from BuiltinModules import BUILTIN_MODULES
+
 # tkinter isn't guaranteed to be installed in every environment this
 # interpreter runs in (e.g. a headless server has no display), but the
 # desktop Notepad IDE still passes a real Tk Text widget as the
@@ -198,12 +200,14 @@ class StatementParser:
             statement = AppendStatement(list_name,value_expr)
 
         elif parse_token.value == 'ondoa':
-            Log('case for list remove')
-            # 'ondoa <index-expr> kutoka <list-name>' - "remove <index>
-            # from <list>". Removes by position (like Python's `del
-            # lst[i]`), not by matching a value - reuses the existing
-            # 'kutoka' ("from") keyword as the marker, same trick as
-            # weka's 'kwenye'.
+            Log('case for list remove by position')
+            # 'ondoa <index-expr> kutoka <list-name>' - removes whatever
+            # is sitting at that POSITION (like Python's `del lst[i]`).
+            # Reuses the existing 'kutoka' ("from") keyword as the
+            # marker, same trick as weka's 'kwenye'. Purely positional -
+            # see 'futa' just below for the by-VALUE form, a separate
+            # keyword of its own rather than a second marker word after
+            # 'ondoa', so there's no ambiguity to resolve here at all.
             index_expr = self.parse_expression_value()
 
             self.token_position = self.token_position + 1  # land on 'kutoka'
@@ -212,21 +216,115 @@ class StatementParser:
 
             statement = RemoveStatement(list_name,index_expr)
 
+        elif parse_token.value == 'futa':
+            Log('case for list remove by value')
+            # 'futa <value-expr> kutoka <list-name>' - "erase <value>
+            # from <list-name>" - removes the first element that equals
+            # <value-expr>, wherever it is in the list (like Python's
+            # `lst.remove(value)`), as opposed to 'ondoa' just above
+            # which removes whatever's at a given POSITION regardless of
+            # what it is.
+            value_expr = self.parse_expression_value()
+
+            self.token_position = self.token_position + 1  # land on 'kutoka'
+            list_name = self.next_token().value
+            self.token_position = self.token_position + 1  # land on <list-name>
+
+            statement = RemoveValueStatement(list_name,value_expr)
+
+        elif parse_token.value == 'tumia':
+            Log('case for built-in module use')
+            # 'tumia Hesabu' - activates a built-in module (see
+            # BuiltinModules.py) so its members become callable via dot
+            # notation, e.g. `Hesabu.mzizi(16)`. Deliberately a real
+            # runtime Statement (UseModuleStatement), NOT a parse-time-
+            # only bookkeeping step like 'darasa'/'leta' above - unlike a
+            # user-written class, a built-in module doesn't need
+            # anything registered at parse time (BUILTIN_MODULES already
+            # has every one of them), so the only thing 'tumia' itself
+            # needs to do is mark the module as in-use once execution
+            # actually reaches this line, which is exactly what running
+            # a real statement gives for free.
+            module_name = next_.value
+            self.token_position = self.token_position + 1  # land on <module-name>
+            statement = UseModuleStatement(module_name)
+
         elif parse_token.value == 'darasa':
             Log('case for class definition')
-            # 'darasa ClassName ... kwisha' - a class body only ever
-            # contains 'eleza' method definitions (no loose statements),
-            # so unlike kwanza/kama/wakati/huku there's no need to push a
-            # symbolTable scope here at all - we just need 'eleza' below
-            # to know it should class-qualify method names until the
-            # matching 'kwisha'. That's tracked via class_stack; the
-            # matching 'kwisha' is told apart from a "real" scoped
-            # block's kwisha via block_stack (see below).
+            # 'darasa ClassName ... kwisha' - a class body may contain
+            # 'eleza' method definitions, 'msingi' shared-variable
+            # declarations, and bare property declarations (no loose
+            # ordinary statements though), so unlike kwanza/kama/wakati/
+            # huku there's no need to push a symbolTable scope here at
+            # all - we just need 'eleza'/'msingi'/a bare property name
+            # below to know they should be routed against this class
+            # until the matching 'kwisha'. That's tracked via
+            # class_stack; the matching 'kwisha' is told apart from a
+            # "real" scoped block's kwisha via block_stack (see below).
+            #
+            # Optionally followed by 'inarithi ParentClassName' -
+            # 'darasa Mtoto inarithi Mzazi' - inheritance. Every method,
+            # msingi variable, and bare property declaration ParentClassName
+            # has is available to Mtoto too, unless Mtoto defines its
+            # own version of the same name (see symbolTable.class_chain()
+            # and every lookup that walks it - MethodCallExpression,
+            # the constructor lookup in FunctionCallStatement, and the
+            # msingi read/write helpers below).
             class_name = next_.value
             self.token_position = self.token_position + 1  # land on <class-name>
-            symbolTable.set_class(class_name)
+
+            parent_name = None
+            after_class_name = self.next_token()
+            if after_class_name is not None and after_class_name.value == 'inarithi':
+                self.token_position = self.token_position + 1  # land on 'inarithi'
+                parent_name = self.next_token().value
+                self.token_position = self.token_position + 1  # land on <parent-class-name>
+
+            symbolTable.set_class(class_name,parent_name)
             self.class_stack.append(class_name)
             self.block_stack.append('darasa')
+
+        elif parse_token.value == 'msingi':
+            Log('case for shared/static class variable declaration')
+            # 'msingi <name> = <value-expr>' - only meaningful directly
+            # inside a darasa body (self.class_stack is only ever
+            # non-empty there). Deliberately evaluated right here, at
+            # PARSE time (like 'darasa'/'leta' above, and the bare
+            # property declaration case below) rather than becoming a
+            # runtime Statement - a msingi variable's initializer is
+            # meant to run exactly once, when the class itself is
+            # defined, not once per instantiation (which is what would
+            # happen if this were, say, folded into 'jenga' instead),
+            # and every Expression type already supports evaluate()
+            # with no call-context needed for a plain literal value.
+            var_name = next_.value
+            self.token_position = self.token_position + 1  # land on <name>
+            self.token_position = self.token_position + 1  # land on '='
+            value_expr = self.parse_expression_value()
+            if self.class_stack:
+                shared = symbolTable.get_class_shared(self.class_stack[-1])
+                if shared is not None:
+                    shared[var_name] = Literal(value_expr.evaluate())
+
+        elif (parse_token.token_type == 'variable' and self.block_stack
+                and self.block_stack[-1] == 'darasa'
+                and (next_ is None or next_.value not in ('(','[','.','='))):
+            Log('case for bare property declaration')
+            # A lone name sitting directly in a darasa body (not inside
+            # a nested eleza - self.block_stack[-1] == 'darasa' is only
+            # true between a darasa and its matching kwisha while no
+            # eleza body is currently open, since entering one pushes
+            # 'scoped' on top until ITS OWN kwisha pops back off) - e.g.
+            # just writing `jina` on its own line - declares that every
+            # instance of this class should have a 'jina' property,
+            # defaulting to None until something (typically 'jenga')
+            # actually assigns it. Without this, reading nafsi.jina (or
+            # obj.jina) before any assignment throws the same
+            # undefined-name error an ordinary unset variable would;
+            # see Instance.__init__ for where the None default actually
+            # gets pre-populated for every new instance.
+            if self.class_stack:
+                symbolTable.declare_property(self.class_stack[-1],parse_token.value)
 
         elif parse_token.value == 'leta':
             Log('case for import')
@@ -328,22 +426,83 @@ class StatementParser:
             # (handled by try_parse_index(), used from '=' and 'chapa'
             # above, so this branch only ever sees it as the *start* of
             # its own statement) or a full index-assignment,
-            # `orodha[i] = <value>`.
-            list_name = parse_token.value
+            # `orodha[i] = <value>`. Also handles a CHAINED target,
+            # `matrix[0][1] = value` - every '[...]' level before the
+            # last one is folded into a nested IndexExpression (`base`
+            # below), exactly like try_parse_index() does for a chained
+            # value-position read, so only the LAST index_expr and
+            # whatever follows its ']' actually decide whether this
+            # ends up being an assignment or a harmless no-op read.
+            base = parse_token.value
             self.token_position = self.token_position + 1  # land on '['
-            index_expr = ExpressionParser(self.fetch_express()).parse()  # stops at ']'
-
-            after_bracket = self.tokens[self.token_position + 2] if self.token_position + 2 < len(self.tokens) else None
+            index_expr = None
+            after_bracket = None
+            while True:
+                index_expr = ExpressionParser(self.fetch_express()).parse()  # stops at ']'
+                after_bracket = self.tokens[self.token_position + 2] if self.token_position + 2 < len(self.tokens) else None
+                if after_bracket is not None and after_bracket.value == '[':
+                    self.token_position = self.token_position + 2  # skip ']', land on next '['
+                    base = IndexExpression(base,index_expr)
+                    continue
+                break
 
             if after_bracket is not None and after_bracket.value == '=':
                 self.token_position = self.token_position + 2  # skip ']', land on '='
                 value_expr = self.parse_expression_value()
-                statement = IndexAssignmentStatement(list_name,index_expr,value_expr)
+                statement = IndexAssignmentStatement(base,index_expr,value_expr)
             else:
-                # A bare `orodha[i]` with nothing capturing it has no
-                # observable effect - there's nothing to execute. The
-                # closing ']' is skipped harmlessly as a phantom token,
-                # same as the ')' left over after any function call.
+                # A bare `orodha[i]` (or `matrix[0][1]`) with nothing
+                # capturing it has no observable effect - there's
+                # nothing to execute. The closing ']' is skipped
+                # harmlessly as a phantom token, same as the ')' left
+                # over after any function call.
+                statement = None
+
+        elif parse_token.value in BUILTIN_MODULES and next_.value == '.':
+            Log('case for built-in module member call')
+            # `Hesabu.member(args)` used as its own statement, e.g.
+            # `Hesabu.mzizi(16)` on a line by itself (return value
+            # discarded) - mirrors the 'variable ... .' case just below
+            # for a regular object, except the target here is a keyword-
+            # typed built-in module name rather than a variable holding
+            # an Instance. Every Hesabu member is a function (there are
+            # no built-in module properties yet), so unlike that case
+            # there's no bare-property-write ('=') branch to handle.
+            module_name = parse_token.value
+            self.token_position = self.token_position + 1  # land on '.'
+            member_name = self.next_token().value
+            self.token_position = self.token_position + 1  # land on <member-name>
+
+            after_member = self.next_token()
+
+            if after_member is not None and after_member.value == '(':
+                self.token_position = self.token_position + 1  # land on '('
+                args = self.fetch_express()
+                statement = BuiltinModuleCallStatement(module_name,member_name,args)
+            else:
+                statement = None
+
+        elif parse_token.token_type == 'variable' and parse_token.value in symbolTable.table['classes'] and next_.value == '.':
+            Log('case for shared/static class variable write')
+            # `ClassName.member = value` - assigns a 'msingi' shared/
+            # static class variable, e.g. `Mtu.idadi = Mtu.idadi + 1`.
+            # A bare `ClassName.member` read with nothing capturing it
+            # (no trailing '=') is just as much a no-op here as a bare
+            # `obj.property` read is in the ordinary instance case just
+            # below - there's nothing to execute for a value that's
+            # simply discarded.
+            class_name = parse_token.value
+            self.token_position = self.token_position + 1  # land on '.'
+            member_name = self.next_token().value
+            self.token_position = self.token_position + 1  # land on <member-name>
+
+            after_member = self.next_token()
+
+            if after_member is not None and after_member.value == '=':
+                self.token_position = self.token_position + 1  # land on '='
+                value_expr = self.parse_expression_value()
+                statement = ClassSharedAssignmentStatement(class_name,member_name,value_expr)
+            else:
                 statement = None
 
         elif parse_token.token_type == 'variable' and next_.value == '.':
@@ -443,6 +602,8 @@ class StatementParser:
         # fetch_express() does for a plain value.
         return (self.try_parse_list_literal()
                 or self.try_parse_length()
+                or self.try_parse_builtin_module_access()
+                or self.try_parse_class_shared_access()
                 or self.try_parse_property_access()
                 or self.try_parse_index()
                 or self.try_parse_call())
@@ -520,6 +681,68 @@ class StatementParser:
             return_val.append(self.read_operand())
         return return_val
 
+    def try_parse_builtin_module_access(self):
+        # Detects `Modulo.member(args)` (e.g. `Hesabu.mzizi(16)`) used as
+        # a VALUE - starting right after the current token - the same
+        # way try_parse_property_access() below detects `obj.member` for
+        # a class instance. Checked first (see try_parse_special_value())
+        # since a built-in module's name is a 'keyword'-typed token (see
+        # Tokens.keyword in LexicalParser.py), never a 'variable'-typed
+        # one, so there's no ambiguity with try_parse_property_access()
+        # to worry about - only one of the two checks can ever match a
+        # given token. Every Hesabu member is callable (there are no
+        # built-in module properties yet), so unlike
+        # try_parse_property_access() this only ever returns a call
+        # expression, never a bare property read.
+        first = self.next_token()
+        second = self.tokens[self.token_position + 2] if self.token_position + 2 < len(self.tokens) else None
+
+        if first is not None and first.value in BUILTIN_MODULES and second is not None and second.value == '.':
+            module_name = first.value
+            third = self.tokens[self.token_position + 3] if self.token_position + 3 < len(self.tokens) else None
+            if third is None:
+                return None
+            member_name = third.value
+            fourth = self.tokens[self.token_position + 4] if self.token_position + 4 < len(self.tokens) else None
+
+            if fourth is not None and fourth.value == '(':
+                self.token_position = self.token_position + 4  # land on '('
+                args = self.fetch_express()
+                self.token_position = self.token_position + 1  # land on ')' (fetch_express stops one token early)
+                return BuiltinModuleCallExpression(module_name,member_name,args)
+
+        return None
+
+    def try_parse_class_shared_access(self):
+        # Detects `ClassName.member` (a 'msingi' shared/static class
+        # variable read, e.g. `x = Mtu.idadi`) used as a VALUE -
+        # starting right after the current token. Told apart from
+        # try_parse_property_access() below purely by whether the name
+        # is a REGISTERED CLASS name (first.value in
+        # symbolTable.table['classes']) rather than an ordinary variable
+        # holding an instance - a class name and an instance variable
+        # occupy the same 'variable'-typed token space, so this check
+        # has to come first (see try_parse_special_value()) and must be
+        # specific about which names it claims, or it would swallow
+        # every ordinary `obj.property` read too. Read-only, like
+        # LengthExpression - there's no "ClassName.method()" call form
+        # (msingi variables are data, not shared methods), so unlike
+        # try_parse_builtin_module_access() this never checks for a
+        # trailing '('.
+        first = self.next_token()
+        second = self.tokens[self.token_position + 2] if self.token_position + 2 < len(self.tokens) else None
+
+        if first is not None and first.value in symbolTable.table['classes'] and second is not None and second.value == '.':
+            class_name = first.value
+            third = self.tokens[self.token_position + 3] if self.token_position + 3 < len(self.tokens) else None
+            if third is None:
+                return None
+            member_name = third.value
+            self.token_position = self.token_position + 3  # land on <member-name>
+            return ClassSharedPropertyExpression(class_name,member_name)
+
+        return None
+
     def try_parse_property_access(self):
         # Detects `name.member` (property read, e.g. `x = mtu1.jina`) or
         # `name.member(args)` (method call, e.g. `x = mtu1.sema_habari()`)
@@ -570,28 +793,21 @@ class StatementParser:
             return ListLiteral(elements)
 
         while True:
-            nested = self.try_parse_list_literal()
-            if nested is not None:
-                elements.append(nested)
-            else:
-                # An element can also be a `name(args)` call - most
-                # importantly, a class constructor call like `Mtu("Amara")`,
-                # so a list of instances (`[Mtu("Amara"), Mtu("Juma")]`) can
-                # be built directly. CallExpression already transparently
-                # handles "name is actually a darasa" via
-                # FunctionCallStatement.execute(), so no extra branching is
-                # needed here for that case.
-                elem_token = self.tokens[self.token_position + 1] if self.token_position + 1 < len(self.tokens) else None
-                after_elem = self.tokens[self.token_position + 2] if self.token_position + 2 < len(self.tokens) else None
-                if elem_token is not None and elem_token.token_type == 'variable' and after_elem is not None and after_elem.value == '(':
-                    function_name = elem_token.value
-                    self.token_position = self.token_position + 2  # land on '('
-                    args = self.fetch_express()
-                    self.token_position = self.token_position + 1  # land on ')' (fetch_express stops one token early)
-                    elements.append(CallExpression(function_name,args))
-                else:
-                    self.token_position = self.token_position + 1  # move onto the element token
-                    elements.append(Object(self.tokens[self.token_position]).cast())
+            # Each element is read with read_operand() - the same
+            # operand reader fetch_express() itself uses - rather than a
+            # separate hand-rolled check here. read_operand() already
+            # tries every "special value" shape in turn (a nested list
+            # literal - so lists still nest to any depth - a `name(args)`
+            # call, including a class constructor like `Mtu("Amara")` for
+            # a list of instances, property/method access, an indexed
+            # read, ...) before falling back to a parenthesized group, a
+            # leading '-' (negative literal), or a plain literal/variable
+            # cast. That means an element can now be any of those shapes,
+            # e.g. `[1, 2.5, -3, (1 + 1), mtu1.jina]` - previously only a
+            # nested list or a call was supported, and a negative or
+            # grouped element silently fell back to being cast as a raw
+            # token instead of a real value.
+            elements.append(self.read_operand())
 
             after = self.next_token()
             if after is not None and after.value == ',':
@@ -627,15 +843,29 @@ class StatementParser:
         # case, `orodha[0] = value`, is handled separately in
         # parseStatement, since it needs to become a whole statement
         # rather than a value.)
+        #
+        # Also handles CHAINED indexing - `matrix[0][1]` reaching into a
+        # nested list in one step - by looping for as long as another
+        # '[' immediately follows the closing ']' just read, folding
+        # each level into the next as the base of a new IndexExpression
+        # (see IndexExpression's own comment for how that base gets
+        # resolved back down to a plain list at evaluate() time).
         first = self.next_token()
         second = self.tokens[self.token_position + 2] if self.token_position + 2 < len(self.tokens) else None
 
         if first is not None and first.token_type == 'variable' and second is not None and second.value == '[':
-            list_name = first.value
+            base = first.value
             self.token_position = self.token_position + 2  # land on '['
-            index_expr = ExpressionParser(self.fetch_express()).parse()
-            self.token_position = self.token_position + 1  # land on ']' (fetch_express stops one token early)
-            return IndexExpression(list_name,index_expr)
+            while True:
+                index_expr = ExpressionParser(self.fetch_express()).parse()
+                self.token_position = self.token_position + 1  # land on ']' (fetch_express stops one token early)
+                base = IndexExpression(base,index_expr)
+                after = self.next_token()
+                if after is not None and after.value == '[':
+                    self.token_position = self.token_position + 1  # land on next '['
+                    continue
+                break
+            return base
 
         return None
 
@@ -669,6 +899,43 @@ class StatementParser:
         special = self.try_parse_special_value()
         if special is not None:
             return special
+
+        # Parenthesized grouping - `(2 + 3) * 4`. A '(' sitting where an
+        # operand is expected (as opposed to right after a variable
+        # name, which try_parse_call()/try_parse_special_value() above
+        # already claims first as a function call) means "read a whole
+        # nested expression, then treat it as one opaque operand" - so
+        # recurse into a brand new fetch_express()/ExpressionParser
+        # pass for whatever's between here and the matching ')'. This
+        # is what actually lets a group override the language's own
+        # strict left-to-right fold (see ExpressionParser.parse()):
+        # since the group is already fully built into a single
+        # Expression object before it's handed back, the OUTER fold
+        # only ever sees it as one indivisible operand, never peeking
+        # inside to re-flatten it.
+        if self.next_token() is not None and self.next_token().value == '(':
+            self.token_position = self.token_position + 1  # land on '('
+            grouped = ExpressionParser(self.fetch_express()).parse()
+            self.token_position = self.token_position + 1  # land on ')' (fetch_express stops one token early)
+            return grouped
+
+        # Negative literal / unary minus - `-5`, `-3.14`, `-mzizi(16)`,
+        # `-(2 + 3)`. Only ever reached here, in an OPERAND-reading
+        # position, never from fetch_express()'s operator-reading loop -
+        # so a '-' encountered here can only ever mean "negate what
+        # follows", never binary subtraction (that case is handled
+        # entirely separately, by SubtractionExpression, once this '-'
+        # has already been consumed as part of a normal operand and the
+        # loop moves on to look for the next operator). Recursing back
+        # into read_operand() (rather than only handling a bare number)
+        # lets a leading '-' stack with any other operand shape above,
+        # including another '-' (`--5`) or a parenthesized group.
+        if (self.next_token() is not None
+                and self.next_token().token_type == 'operator'
+                and self.next_token().value == '-'):
+            self.token_position = self.token_position + 1  # consume '-'
+            return NegationExpression(self.read_operand())
+
         operand = Object(self.next_token()).cast()
         self.token_position = self.token_position + 1
         return operand
@@ -683,7 +950,18 @@ class StatementParser:
             # 'chapa "hi"' with nothing after it) - nothing more to read.
             return_val = []
 
-        elif next_.token_type == 'divider':
+        elif next_.value in (')', ']'):
+            # An immediately-following closing divider means "no
+            # expression here at all" - e.g. empty call args (`f()`) or
+            # (in principle) an empty index. Deliberately checked by
+            # VALUE, not just token_type == 'divider' as this used to
+            # be - '(' is also a divider, but it means the OPPOSITE
+            # thing (the start of a parenthesized group to read INTO,
+            # not "nothing to read"), and letting it fall through this
+            # branch used to silently turn every `(...)` grouped
+            # expression into an empty one. '[' and '.' are still
+            # excluded too, on the same reasoning: both start something
+            # (a list literal / a property path) rather than end it.
             return_val = []
 
 
@@ -943,8 +1221,20 @@ class FunctionCallStatement(Statement):
             # class defines one) purely so argument-binding/nafsi/return-
             # flag handling don't need to be duplicated.
             instance = Instance(self.name)
-            constructor_name = 'darasa-{}-jenga'.format(self.name)
-            if constructor_name in symbolTable.table['functions']:
+            # Look for 'jenga' on this class first, then (via
+            # class_chain()) each ancestor in turn via 'inarithi' - a
+            # subclass that doesn't define its own constructor
+            # transparently reuses its parent's, same as any other
+            # inherited method (see MethodCallExpression.evaluate()
+            # just below for the same lookup, used for every OTHER
+            # method call).
+            constructor_name = None
+            for cls in symbolTable.class_chain(self.name):
+                candidate = 'darasa-{}-jenga'.format(cls)
+                if candidate in symbolTable.table['functions']:
+                    constructor_name = candidate
+                    break
+            if constructor_name is not None:
                 constructor_call = FunctionCallStatement((constructor_name,self.params,instance))
                 constructor_call.execute()
                 # A constructor's own 'rudisha' (if it used one) is
@@ -1015,6 +1305,20 @@ class FunctionCallStatement(Statement):
         symbolTable.pop_call()
 
 
+class NegationExpression(Object):
+    # A leading '-' before an operand - `-5`, `-3.14`, `-mzizi(16)`,
+    # `-(2 + 3)` - built directly by read_operand() above, never via
+    # ExpressionParser.operators (it's unary, not one of the binary
+    # left/right operators that dict maps). Wraps whatever operand
+    # followed the '-' (which might itself be another NegationExpression,
+    # for something like `--5`) and simply negates its evaluated result.
+    def __init__(self,operand):
+        self.operand = operand
+
+    def evaluate(self):
+        return -self.operand.evaluate()
+
+
 class CallExpression(Object):
     # Lets a function's return value be used directly - `x = square(5)`
     # or `chapa square(5)` - instead of only being able to call a
@@ -1047,16 +1351,61 @@ def _fetch_list(list_name):
     return value
 
 
+def _describe_index_base(base):
+    # A human-readable name for an index error message. A single-level
+    # base is just the plain variable name (str) it's always been - a
+    # chained one (an IndexExpression standing in for everything before
+    # the last '[', e.g. the 'matrix[0]' inside 'matrix[0][1]') doesn't
+    # have one single name, so it's rendered as the underlying variable
+    # name plus one "[...]" per level it goes through, e.g. 'matrix[..]'.
+    if isinstance(base,str):
+        return base
+    return '{}[..]'.format(_describe_index_base(base.list_name))
+
+
+def _resolve_list_base(base):
+    # Shared by IndexExpression/IndexAssignmentStatement so a chained
+    # index (`matrix[0][1]`) and a plain one (`orodha[0]`) can both be
+    # resolved through the exact same code path. `base` is either a
+    # plain variable name (str - the original, single-level case,
+    # handled via the existing _fetch_list()), or another Object/
+    # Expression already built for an earlier '[' in the same chain
+    # (e.g. the 'matrix[0]' IndexExpression standing in for everything
+    # before the final '[1]') - evaluating THAT recursively resolves
+    # every earlier level first, so a chain of any depth "just works"
+    # without this function needing to know how deep it's going.
+    if isinstance(base,str):
+        return _fetch_list(base)
+    value = base.evaluate()
+    if symbolTable.exit() != 0:
+        return None
+    if not isinstance(value,list):
+        Error.throwException('orodha',_describe_index_base(base))
+        return None
+    return value
+
+
 class Instance:
     # A single object created from a 'darasa' (class). Its properties
     # live in their own dedicated corner of symbolTable's variable
     # storage (keyed by scope_key, one per instance) - completely
     # separate from every other instance's properties, even instances of
-    # the same class, and from ordinary local/global variables.
+    # the same class, and from ordinary local/global variables (and
+    # separate again from that class's own 'msingi' shared-variable
+    # storage - see symbolTable.get_class_shared()).
     def __init__(self,class_name):
         self.class_name = class_name
         self.scope_key = 'instance-{}-{}'.format(class_name,symbolTable.new_instance_id())
-        symbolTable.table['variables'][self.scope_key] = {}
+        # Every bare property declaration for this class AND every
+        # ancestor it 'inarithi's from (see symbolTable.declared_properties())
+        # starts out defaulting to None here, BEFORE the constructor (if
+        # any) runs - so `nafsi.jina` reads back None instead of
+        # throwing an undefined-name error if 'jenga' never got around
+        # to assigning it, exactly the same way a declared-but-unset
+        # property behaves in most other object-oriented languages.
+        symbolTable.table['variables'][self.scope_key] = {
+            name: Literal(None) for name in symbolTable.declared_properties(class_name)
+        }
 
     def __str__(self):
         return '<{} instance>'.format(self.class_name)
@@ -1102,6 +1451,88 @@ class ConditionalExpression(Object):
         return self.false_value.evaluate()
 
 
+def _resolve_shared_dict_for_read(class_name,property_name):
+    # Walks class_name's own inheritance chain (itself, then its
+    # 'inarithi' parent, and so on - same order/mechanism as method and
+    # constructor resolution) looking for whichever class in it
+    # actually has this msingi variable declared, returning that class's
+    # OWN shared dict (not a copy - so callers can both read AND, via
+    # _resolve_shared_dict_for_write() below, mutate the real thing) -
+    # or None if no class in the chain has ever declared it.
+    for cls in symbolTable.class_chain(class_name):
+        shared = symbolTable.get_class_shared(cls)
+        if shared is not None and property_name in shared:
+            return shared
+    return None
+
+
+def _resolve_shared_dict_for_write(class_name,property_name):
+    # Same lookup as _resolve_shared_dict_for_read() above, so writing
+    # to a msingi variable that was actually declared on an ANCESTOR
+    # class (e.g. `Mtoto.idadi = 5` where 'idadi' was declared with
+    # 'msingi' on Mzazi, not Mtoto) updates that one shared copy - not a
+    # fresh, shadowing copy on Mtoto - keeping "one value shared by
+    # every instance of the class AND its subclasses" true after a
+    # write, not just after the initial 'msingi' declaration. Only
+    # creates a brand new entry (on class_name's own dict) if NO class
+    # in the whole chain has ever declared this name before - the same
+    # "assigning a name that doesn't exist yet just creates it" rule
+    # ordinary variables already follow everywhere else in Hamri.
+    existing = _resolve_shared_dict_for_read(class_name,property_name)
+    if existing is not None:
+        return existing
+    return symbolTable.get_class_shared(class_name)
+
+
+class ClassSharedPropertyExpression(Object):
+    # `ClassName.member` used as a value - `x = Mtu.idadi` or
+    # `chapa Mtu.idadi` - reads a 'msingi' shared/static class variable.
+    # Unlike PropertyExpression just below (one copy per INSTANCE), this
+    # reads whatever the ONE copy shared by every instance of the class
+    # (and every subclass that doesn't declare its own same-named msingi
+    # variable) currently holds.
+    def __init__(self,class_name,property_name):
+        self.class_name = class_name
+        self.property_name = property_name
+
+    def evaluate(self):
+        shared = _resolve_shared_dict_for_read(self.class_name,self.property_name)
+        if shared is None:
+            # Reads the same way an undefined plain variable would -
+            # this msingi variable was never declared anywhere in the
+            # class's own inheritance chain.
+            Error.throwException('anwani',self.property_name)
+            return None
+        return shared[self.property_name].evaluate()
+
+
+class ClassSharedAssignmentStatement(Statement):
+    # `ClassName.member = <value>` - writes a 'msingi' shared/static class
+    # variable. Every instance of the class (current and future, and
+    # every subclass that doesn't shadow it with its own same-named
+    # msingi variable) observes the new value immediately, since there's
+    # only ever the one copy to begin with.
+    def __init__(self,class_name,property_name,value_expr):
+        self.class_name = class_name
+        self.property_name = property_name
+        self.value_expr = value_expr
+
+    def execute(self):
+        value = self.value_expr.evaluate()
+        if symbolTable.exit() != 0:
+            return
+        shared = _resolve_shared_dict_for_write(self.class_name,self.property_name)
+        if shared is None:
+            # class_name itself isn't actually a registered class (this
+            # shouldn't normally be reachable - try_parse_class_shared_access()/
+            # the top-level 'variable in symbolTable.table['classes']'
+            # dispatch branch both already require that) - reported the
+            # same way an undefined name would be, rather than crashing.
+            Error.throwException('anwani',self.property_name)
+            return
+        shared[self.property_name] = Literal(value)
+
+
 class PropertyExpression(Object):
     # `obj.jina` used as a value - `x = mtu1.jina` or `chapa mtu1.jina`.
     def __init__(self,object_name,property_name):
@@ -1144,11 +1575,17 @@ class PropertyAssignmentStatement(Statement):
 
 class MethodCallExpression(Object):
     # `obj.method(args)` used as a value - `x = mtu1.sema()` or
-    # `chapa mtu1.sema()`. Resolves which class's method to run from the
-    # object's own class (not from however the variable happens to be
-    # named), then reuses FunctionCallStatement so argument binding,
-    # nafsi-binding, and rudisha/return handling all work exactly the
-    # same as a plain function call.
+    # `chapa mtu1.sema()`. Resolves which class's method to run by
+    # walking instance.class_name's own inheritance chain (itself,
+    # then its 'inarithi' parent, then that parent's own parent, and so
+    # on) via symbolTable.class_chain() - the first class in that chain
+    # that actually defines this method name wins, so a subclass that
+    # doesn't override a given method transparently falls back to
+    # whichever ancestor does define it, while one that DOES override
+    # it always wins over any ancestor's version. Once resolved, reuses
+    # FunctionCallStatement so argument binding, nafsi-binding, and
+    # rudisha/return handling all work exactly the same as a plain
+    # function call.
     def __init__(self,object_name,method_name,args):
         self.object_name = object_name
         self.method_name = method_name
@@ -1158,8 +1595,13 @@ class MethodCallExpression(Object):
         instance = _fetch_instance(self.object_name)
         if instance is None:
             return None
-        qualified_name = 'darasa-{}-{}'.format(instance.class_name,self.method_name)
-        if qualified_name not in symbolTable.table['functions']:
+        qualified_name = None
+        for cls in symbolTable.class_chain(instance.class_name):
+            candidate = 'darasa-{}-{}'.format(cls,self.method_name)
+            if candidate in symbolTable.table['functions']:
+                qualified_name = candidate
+                break
+        if qualified_name is None:
             Error.throwException('kazi',self.method_name)
             return None
         call = FunctionCallStatement((qualified_name,self.args,instance))
@@ -1172,6 +1614,77 @@ class MethodCallStatement(Statement):
     # simply discarded.
     def __init__(self,object_name,method_name,args):
         self.expr = MethodCallExpression(object_name,method_name,args)
+
+    def execute(self):
+        self.expr.evaluate()
+
+
+class UseModuleStatement(Statement):
+    # `tumia Hesabu` - activates a built-in module (see
+    # BuiltinModules.py) so BuiltinModuleCallExpression will actually
+    # dispatch calls to it. An unrecognized module name (anything not in
+    # BUILTIN_MODULES) is reported the same way an undefined variable
+    # would be ('anwani') - there's no separate "unknown module" error
+    # code, since from the script's point of view it's the same mistake:
+    # a name that doesn't refer to anything real.
+    def __init__(self,module_name):
+        self.module_name = module_name
+
+    def execute(self):
+        if self.module_name not in BUILTIN_MODULES:
+            Error.throwException('anwani',self.module_name)
+            return
+        symbolTable.use_module(self.module_name)
+
+
+class BuiltinModuleCallExpression(Object):
+    # `Modulo.member(args)` used as a value - `x = Hesabu.mzizi(16)` or
+    # `chapa Hesabu.mzizi(16)`. Looks the member up straight off the
+    # registered Python class via getattr() rather than going through
+    # FunctionCallStatement/symbolTable like a darasa method does - a
+    # built-in module's members are plain Python functions with no
+    # Hamri-level parameter binding, nafsi, or return-flag machinery to
+    # thread through, so calling them directly is both simpler and
+    # correct.
+    def __init__(self,module_name,member_name,args):
+        self.module_name = module_name
+        self.member_name = member_name
+        self.args = args
+
+    def evaluate(self):
+        if not symbolTable.is_module_used(self.module_name):
+            Error.throwException('tumia',self.module_name)
+            return None
+        module_class = BUILTIN_MODULES.get(self.module_name)
+        function_ = getattr(module_class,self.member_name,None) if module_class is not None else None
+        if function_ is None:
+            Error.throwException('kazi','{}.{}'.format(self.module_name,self.member_name))
+            return None
+        # self.args is the same flat operand/operator token-and-value
+        # list every other call site builds via fetch_express() - each
+        # actual argument is every OTHER element (fetch_express()
+        # already deliberately drops comma tokens, so what's left really
+        # is just "arg, arg, arg, ..." with nothing to filter out).
+        evaluated_args = [arg.evaluate() for arg in self.args]
+        try:
+            return function_(*evaluated_args)
+        except (ValueError,TypeError,ZeroDivisionError,OverflowError):
+            # Covers both a domain error from the underlying Python
+            # function (e.g. Hesabu.mzizi(-1), same as math.sqrt(-1))
+            # and a wrong number/type of arguments (e.g.
+            # Hesabu.kubwa(1) missing its second argument) - reported as
+            # one clean Hamri-level message rather than letting whichever
+            # raw Python exception happened to fire escape as a traceback.
+            Error.throwException('hoja','{}.{}'.format(self.module_name,self.member_name))
+            return None
+
+
+class BuiltinModuleCallStatement(Statement):
+    # `Modulo.member(args)` used as its own statement, e.g. a bare
+    # `Hesabu.mzizi(16)` on its own line - any return value is simply
+    # discarded, same as MethodCallStatement above.
+    def __init__(self,module_name,member_name,args):
+        self.expr = BuiltinModuleCallExpression(module_name,member_name,args)
 
     def execute(self):
         self.expr.evaluate()
@@ -1204,32 +1717,48 @@ class LengthExpression(Object):
 
 class IndexExpression(Object):
     # `orodha[i]` used as a value - `x = orodha[i]` or `chapa orodha[i]`.
+    # `list_name` is either a plain variable name (str, the original
+    # single-level case) or another IndexExpression standing in for
+    # everything before the LAST '[' of a chain - that's what lets
+    # `matrix[0][1]` be read in one step: it parses as
+    # IndexExpression(IndexExpression('matrix', 0), 1), so evaluating
+    # the outer one first resolves 'matrix[0]' (via
+    # _resolve_list_base(), which recurses into the inner
+    # IndexExpression's own evaluate()) down to a plain list, then
+    # indexes into THAT with '[1]' - no intermediate variable required.
     def __init__(self,list_name,index_expr):
         self.list_name = list_name
         self.index_expr = index_expr
 
     def evaluate(self):
-        lst = _fetch_list(self.list_name)
+        lst = _resolve_list_base(self.list_name)
         if lst is None:
             return None
         index = self.index_expr.evaluate()
         if symbolTable.exit() != 0:
             return None
         if not isinstance(index,int) or index < 0 or index >= len(lst):
-            Error.throwException('fahirisi',self.list_name)
+            Error.throwException('fahirisi',_describe_index_base(self.list_name))
             return None
         return lst[index]
 
 
 class IndexAssignmentStatement(Statement):
     # `orodha[i] = <value>` - mutates an existing element in place.
+    # `list_name` follows the exact same "str or chained IndexExpression"
+    # shape as IndexExpression above, so `matrix[0][1] = value` mutates
+    # the actual inner list in place (lst[index] = value below assigns
+    # into whatever real Python list _resolve_list_base() resolved
+    # 'matrix[0]' down to, by reference, not a copy) - the same way
+    # `matrix[0]` on its own already returns the real inner list object,
+    # not a snapshot of it.
     def __init__(self,list_name,index_expr,value_expr):
         self.list_name = list_name
         self.index_expr = index_expr
         self.value_expr = value_expr
 
     def execute(self):
-        lst = _fetch_list(self.list_name)
+        lst = _resolve_list_base(self.list_name)
         if lst is None:
             return
         index = self.index_expr.evaluate()
@@ -1237,7 +1766,7 @@ class IndexAssignmentStatement(Statement):
         if symbolTable.exit() != 0:
             return
         if not isinstance(index,int) or index < 0 or index >= len(lst):
-            Error.throwException('fahirisi',self.list_name)
+            Error.throwException('fahirisi',_describe_index_base(self.list_name))
             return
         lst[index] = value
 
@@ -1278,6 +1807,32 @@ class RemoveStatement(Statement):
             Error.throwException('fahirisi',self.list_name)
             return
         del lst[index]
+
+
+class RemoveValueStatement(Statement):
+    # `futa <value> kutoka orodha` - "erase <value> from orodha" -
+    # removes the first element that equals <value>, wherever
+    # it is in the list (unlike RemoveStatement above, which removes
+    # whatever's sitting at a given POSITION regardless of what it is).
+    # Same behaviour as Python's own `lst.remove(value)`, including
+    # which element counts as "first" (list order) and using ordinary
+    # '==' equality to match (so e.g. removing the int 2 also matches a
+    # stored 2.0, same as everywhere else numbers compare in Hamri).
+    def __init__(self,list_name,value_expr):
+        self.list_name = list_name
+        self.value_expr = value_expr
+
+    def execute(self):
+        lst = _fetch_list(self.list_name)
+        if lst is None:
+            return
+        value = self.value_expr.evaluate()
+        if symbolTable.exit() != 0:
+            return
+        if value not in lst:
+            Error.throwException('futa','{} katika {}'.format(value,self.list_name))
+            return
+        lst.remove(value)
 
 
 class FunctionDefinitionStatement(Statement):
